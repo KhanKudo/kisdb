@@ -1,0 +1,14 @@
+{
+  "name": "kisdb",
+  "module": "index.ts",
+  "scripts": {
+    "build": "bun build client.js --target browser --bundle --outfile browser.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "type": "module"
+}
