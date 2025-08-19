@@ -1,7 +1,9 @@
 import fs from 'fs'
+import { getDefaultLibFileName } from 'typescript'
 
 const dbs = new Map<string, Array<unknown>>()
 const subs = new Map<string, number>()
+const unsaved = new Set<string>()
 
 function revertDB(db: string) {
   if (!dbs.has(db))
@@ -33,6 +35,7 @@ function loadDB(db: string) {
 function saveDB(db: string) {
   //TODO will require metadata
   fs.writeFileSync(`${db}.kisdb.json`, JSON.stringify(dbs.get(db)))
+  unsaved.delete(db)
 }
 
 const defaultFile = 'default.kisdb.json'
@@ -92,6 +95,7 @@ export default {
           // return write(db => db[com[0]] = com[1])
           //TODO ^^^ with a change-oriented protocol, a custom append-only json .db file format can easily be created for better performance
           // also use existing scripts such as 'Collection' and create some generic baseclass-set for handling bidirectional 'appendable' updates
+          // KCP -> Kis(db) Command Protocol
         }
         else if (Array.isArray(com) && com.length === 3) {
           console.log(`Operation ${com[0]} on ${com[1]} with ${com[2]}`)
@@ -118,6 +122,7 @@ export default {
           }
         }
 
+        unsaved.add(dbname)
         fs.appendFileSync(dbfile, `\n${command}`)
       }
     }
@@ -125,6 +130,7 @@ export default {
     subs.set(dbname, (subs.get(dbname) ?? 0) + 1)
 
     ws.send(JSON.stringify(data))
+    console.log(`Socket opened with DB ${dbname}`)
   },
   message(ws: Bun.ServerWebSocket<{ dbname: string, read: Array<unknown>, write: (func: (db: Array<unknown>) => any) => void, append: (command: string) => void }>, message: string | Buffer): void | Promise<void> {
     if (typeof message !== 'string')
@@ -136,8 +142,16 @@ export default {
     const subbed = subs.get(ws.data.dbname) ?? 0
     if (subbed > 1) {
       subs.set(ws.data.dbname, subbed - 1)
+      console.log(`Socket closed, DB ${ws.data.dbname} still subscribed`)
     }
     else {
+      if (unsaved.has(ws.data.dbname)) {
+        saveDB(ws.data.dbname)
+        console.log(`Socket closed, DB ${ws.data.dbname} saved`)
+      }
+      else {
+        console.log(`Socket closed, DB ${ws.data.dbname} had no unsaved changes`)
+      }
       subs.delete(ws.data.dbname)
       dbs.delete(ws.data.dbname)
     }

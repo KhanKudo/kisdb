@@ -10,5 +10,8 @@
   "peerDependencies": {
     "typescript": "^5"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "dynamics": "link:dynamics"
+  }
 }
