@@ -1,8 +1,8 @@
 import fs from 'fs'
-import { getDefaultLibFileName } from 'typescript'
+import { KcpList } from './kcp'
 
-const dbs = new Map<string, Array<unknown>>()
-const subs = new Map<string, number>()
+const dbs = new Map<string, KcpList>()
+const subs = new Map<string, Set<(command: string) => void>>()
 const unsaved = new Set<string>()
 
 function revertDB(db: string) {
@@ -13,7 +13,7 @@ function revertDB(db: string) {
 
   const memory = dbs.get(db)!
 
-  memory.length = 0
+  memory.clear()
   memory.push(...file)
 
   return memory
@@ -26,8 +26,38 @@ function revertDB(db: string) {
 }
 
 function loadDB(db: string) {
-  if (!dbs.has(db))
-    dbs.set(db, JSON.parse(fs.readFileSync(`${db}.kisdb.json`, { 'encoding': 'utf-8' })))
+  if (!dbs.has(db)) {
+    const file = fs.readFileSync(`${db}.kisdb.json`, { 'encoding': 'utf-8' })
+    const indexNL = file.indexOf('\n')
+    let commands: string[] | null = null
+    debugger
+    let json: string
+    if (indexNL !== -1) {
+      json = file.slice(0, indexNL)
+      commands = file.slice(indexNL + 1).split('\n')
+    }
+    else
+      json = file
+
+    dbs.set(db,
+      new KcpList(
+        (...parts) => {
+          const com = parts.join(',')
+          subs.get(db)?.forEach(send => send(com))
+        },
+        json
+      )
+    )
+    if (commands) {
+      console.log(`loading appended kcp commands[${commands.length}] from DB "${db}"...`)
+      for (const com of commands)
+        dbs.get(db)!.receiveKCP(com.slice(1))
+
+      console.log(`all ${commands.length} commands from DB "${db}" were loaded!`)
+
+      unsaved.add(db)
+    }
+  }
 
   return dbs.get(db)!
 }
@@ -44,16 +74,15 @@ if (!fs.existsSync(defaultFile)) {
   // fs.writeFileSync(defaultFile, '{}')
 }
 
-type Operator =
-  'push' |
-  'pop' |
-  'shift' |
-  'unshift' |
-  'insert' |
-  'remove'
+type WSData = {
+  dbname: string,
+  read: KcpList,
+  receive: (command: string) => void,
+  send: (command: string) => void,
+}
 
 export default {
-  open(ws: Bun.ServerWebSocket<unknown>): void {
+  open(ws: Bun.ServerWebSocket<WSData>): void {
     let dbname = 'default'
     if (ws.data !== null && typeof ws.data === 'object' && 'db' in ws.data && typeof ws.data.db === 'string') {
       dbname = ws.data.db
@@ -61,7 +90,7 @@ export default {
 
     const dbfile = `${dbname}.kisdb.json`
 
-    function write(func: (db: Array<unknown>) => any) {
+    function write(func: (db: KcpList) => any) {
       try {
         const res = func(data)
         saveDB(dbname)
@@ -86,62 +115,36 @@ export default {
       //     throw err
       //   }
       // },
-      append(command: string) {
-        const com = JSON.parse(command)
-        if (Array.isArray(com) && com.length === 2) {
-          console.log(`Set value [${com[0]}]=${com[1]}`)
-          const [index, value] = com
-          data[index] = value
-          // return write(db => db[com[0]] = com[1])
-          //TODO ^^^ with a change-oriented protocol, a custom append-only json .db file format can easily be created for better performance
-          // also use existing scripts such as 'Collection' and create some generic baseclass-set for handling bidirectional 'appendable' updates
-          // KCP -> Kis(db) Command Protocol
-        }
-        else if (Array.isArray(com) && com.length === 3) {
-          console.log(`Operation ${com[0]} on ${com[1]} with ${com[2]}`)
-          const [op, loc, val] = com as [Operator, number, any]
-          switch (op) {
-            case 'push':
-              data.push(val)
-              break
-            case 'pop':
-              data.pop()
-              break
-            case 'shift':
-              data.shift()
-              break
-            case 'unshift':
-              data.unshift(val)
-              break
-            case 'insert':
-              data.splice(loc, 0, val)
-              break
-            case 'remove':
-              data.splice(loc, 1)
-              break
-          }
-        }
-
+      receive(command: string) {
+        data.receiveKCP(command.slice(1))
         unsaved.add(dbname)
         fs.appendFileSync(dbfile, `\n${command}`)
+      },
+      send(command: string) {
+        ws.send(',' + command)
+        unsaved.add(dbname)
+        fs.appendFileSync(dbfile, `\n${',' + command}`)
       }
     }
 
-    subs.set(dbname, (subs.get(dbname) ?? 0) + 1)
+    if (!subs.has(dbname))
+      subs.set(dbname, new Set())
+
+    subs.get(dbname)!.add(ws.data.send)
 
     ws.send(JSON.stringify(data))
     console.log(`Socket opened with DB ${dbname}`)
   },
-  message(ws: Bun.ServerWebSocket<{ dbname: string, read: Array<unknown>, write: (func: (db: Array<unknown>) => any) => void, append: (command: string) => void }>, message: string | Buffer): void | Promise<void> {
+  message(ws: Bun.ServerWebSocket<WSData>, message: string | Buffer): void | Promise<void> {
     if (typeof message !== 'string')
       return console.warn('Received a Buffer message which is not supported!')
 
-    ws.data.append(message)
+    ws.data.receive(message)
   },
-  close(ws: Bun.ServerWebSocket<{ dbname: string }>, code: number, reason: string): void | Promise<void> {
-    const subbed = subs.get(ws.data.dbname) ?? 0
-    if (subbed > 1) {
-      subs.set(ws.data.dbname, subbed - 1)
+  close(ws: Bun.ServerWebSocket<WSData>, code: number, reason: string): void | Promise<void> {
+    const subbed = subs.get(ws.data.dbname)
+    if (subbed && subbed.size > 1) {
+      subbed.delete(ws.data.send)
       console.log(`Socket closed, DB ${ws.data.dbname} still subscribed`)
     }
     else {

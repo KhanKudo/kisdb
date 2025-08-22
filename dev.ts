@@ -4,6 +4,9 @@ const server = Bun.serve({
   routes: {
     '/kisdb'(req, server) {
       server.upgrade(req)
+    },
+    '/kisdb/:db'(req, server) {
+      server.upgrade(req, { data: req.params })
     }
   },
   hostname: '0.0.0.0',

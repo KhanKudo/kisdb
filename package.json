@@ -2,7 +2,8 @@
   "name": "kisdb",
   "module": "index.ts",
   "scripts": {
-    "build": "bun build client.js --target browser --bundle --outfile browser.js"
+    "build": "bun build client.js --target browser --bundle --outfile browser.js",
+    "dev": "bun run dev.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

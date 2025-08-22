@@ -45,7 +45,7 @@ class Collection {
   data = [];
   onAdd = new Listenable;
   onRemove = new Listenable;
-  constructor(add, remove = async () => {}, src = null) {
+  constructor(add, remove = async () => { }, src = null) {
     this.add = add;
     this.remove = remove;
     this.src = src;
@@ -244,7 +244,7 @@ class Collection {
     return res?.[0] ?? null;
   }
   async clear() {
-    while (await this.pop() !== null) {}
+    while (await this.pop() !== null) { }
   }
 }
 // ../dynamics/src/ObservableSet.ts
@@ -348,14 +348,17 @@ class List {
       this.data.push(...JSON.parse(srcOrJson));
     }
   }
-  handleCreate(value) {
-    setTimeout(() => this.onAdd.emit(value));
-    console.log("create");
-    return value;
-  }
-  handleDelete(value) {
-    setTimeout(() => this.onRemove.emit(value));
-    console.log("delete");
+  _handleChange(index, value, insert = false) {
+    if (value !== undefined) {
+      if (!insert) { } else if (index === 0) { } else if (index === this.data.length) { } else { }
+    } else if (index === 0) { } else if (index === this.data.length) { } else { }
+    if (this._ignoreCallback) {
+      this._ignoreCallback = false;
+      console.log("update:", index, value, insert);
+    } else {
+      this.changeCallback?.(index, value, insert);
+      console.log("change:", index, value, insert);
+    }
     return value;
   }
   cleanIndex(rawIndex, allowOnEnds = false) {
@@ -445,362 +448,195 @@ class List {
     return res;
   }
   push(...values) {
-    for (const value of values)
-      this.data.push(this.handleCreate(value));
+    for (const value of values) {
+      this.data.push(value);
+      setTimeout(() => this.onAdd.emit(value));
+    }
   }
   unshift(...values) {
-    for (const value of values)
-      this.data.unshift(this.handleCreate(value));
+    for (const value of values) {
+      this.data.unshift(value);
+      setTimeout(() => this.onAdd.emit(value));
+    }
   }
   pop() {
-    if (!this.data.length)
-      return null;
-    return this.handleDelete(this.data.pop());
+    const temp = this.data.pop();
+    if (temp !== undefined)
+      setTimeout(() => this.onRemove.emit(temp));
+    return temp;
   }
   shift() {
-    if (!this.data.length)
-      return null;
-    return this.handleDelete(this.data.shift());
+    const temp = this.data.shift();
+    if (temp !== undefined)
+      setTimeout(() => this.onRemove.emit(temp));
+    return temp;
   }
-  insert(value, index) {
-    index = this.forceIndex(index, true);
-    if (index === this.data.length)
-      this.push(this.handleCreate(value));
-    else if (index === 0)
-      this.unshift(this.handleCreate(value));
-    else
-      this.data.splice(index, 0, this.handleCreate(value));
+  insert(index, value) {
+    this.data.splice(this.forceIndex(index, true), 0, value);
+    setTimeout(() => this.onAdd.emit(value));
   }
-  set(index, newValue) {
+  set(index, value) {
     index = this.forceIndex(index);
-    this.handleDelete(this.data[index]);
-    this.data[index] = this.handleCreate(newValue);
+    const temp = this.data[index];
+    setTimeout(() => this.onRemove.emit(temp));
+    this.data[index] = value;
+    setTimeout(() => this.onAdd.emit(value));
   }
   replace(oldValue, newValue) {
     const index = this.indexOf(oldValue);
     if (index === -1)
       throw new Error(`Could not replace oldValue "${oldValue}" in collection with newValue "${newValue}", as the old value couldn't be found`);
-    this.handleDelete(this.data[index]);
-    this.data[index] = this.handleCreate(newValue);
+    this.set(index, newValue);
   }
   remove(index) {
     const i = this.cleanIndex(index);
     if (i === null)
-      return null;
-    const value = this.data.splice(i, 1)?.[0];
-    this.handleDelete(value);
-    return value;
+      return;
+    const temp = this.data.splice(index, 1)[0];
+    setTimeout(() => this.onRemove.emit(temp));
+    return temp;
   }
   delete(value) {
     const index = this.indexOf(value);
     if (index === -1)
-      return null;
-    this.data.splice(index, 1);
-    this.handleDelete(value);
-    return value;
+      return;
+    return this.remove(index);
   }
   clear() {
-    while (this.pop() !== null) {}
+    while (this.pop() !== undefined) { }
   }
 }
-// deepProxy.js
-function toDeepProxy(object, { allowFreeze, key, parent, setListener, getListener, setter, getter }) {
-  const options = {
-    allowFreeze,
-    key,
-    parent,
-    setListener,
-    getListener,
-    setter,
-    getter
-  };
-  function getPath(deepProxy, key2) {
-    let path = [];
-    if (key2 !== undefined)
-      path.push(key2);
-    if (deepProxy.__key !== undefined)
-      path.unshift(deepProxy.__key);
-    let parent2 = deepProxy;
-    while (parent2.__parent !== undefined) {
-      parent2 = parent2.__parent;
-      if (parent2.__key !== undefined)
-        path.unshift(parent2.__key);
-    }
-    return path;
+// kcp.ts
+var Operators;
+((Operators2) => {
+  Operators2[Operators2["SET"] = 0] = "SET";
+  Operators2[Operators2["DELETE"] = 1] = "DELETE";
+  Operators2[Operators2["PUSH"] = 2] = "PUSH";
+  Operators2[Operators2["POP"] = 3] = "POP";
+  Operators2[Operators2["SHIFT"] = 4] = "SHIFT";
+  Operators2[Operators2["UNSHIFT"] = 5] = "UNSHIFT";
+  Operators2[Operators2["INSERT"] = 6] = "INSERT";
+  Operators2[Operators2["REMOVE"] = 7] = "REMOVE";
+})(Operators ||= {});
+
+class KcpLink {
+  sender;
+  dyns = new Map;
+  received(command) {
+    const eiLoc = command.indexOf(",");
+    this.dyns.get(command.slice(0, eiLoc))?.receiveKCP(command.slice(eiLoc + 1));
   }
-  function getTopParent(deepProxy) {
-    let parent2 = deepProxy;
-    while (parent2.__parent !== undefined) {
-      parent2 = parent2.__parent;
-    }
-    return parent2;
+  send(...commandParts) {
+    return this.sender(commandParts.join(","));
   }
-  const deepProxyHandler = {
-    get(target, key2, receiver) {
-      if (key2 === "__parent" || key2 === "__key" || allowFreeze && (key2 === "__isFrozen" || key2 === "__frozenTarget" || key2 === "freeze" || key2 === "revert" || key2 === "commit" || key2 === "silentCommit")) {
-        return this[key2];
-      } else if (key2 === "__target") {
-        return target;
-      } else if (key2 === "__proxyHandler") {
-        return deepProxyHandler;
-      } else if (key2 === "__allowFreeze") {
-        return allowFreeze;
-      }
-      let path = getPath(this, key2);
-      let parent2 = getTopParent(this);
-      if (this.__isFrozen) {
-        if (typeof getter === "function") {
-          return getter([{
-            target,
-            key: key2,
-            path,
-            topParent: parent2
-          }]);
-        } else {
-          return target[key2];
-        }
-      } else if (typeof getter === "function") {
-        if (allowFreeze)
-          return getter([{
-            target,
-            key: key2,
-            path,
-            topParent: parent2
-          }]);
-        else
-          return getter(target, key2, path, parent2);
-      } else {
-        if (typeof getListener === "function") {
-          if (allowFreeze)
-            getListener([{
-              target,
-              key: key2,
-              path,
-              topParent: parent2
-            }]);
-          else
-            getListener(target, key2, path, parent2);
-        }
-        return target[key2];
-      }
-    },
-    set(target, key2, value, receiver) {
-      if (key2 === "__parent" || key2 === "__key") {
-        this[key2] = value;
-        return true;
-      } else if (key2 === "__allowFreeze") {
-        throw new Error("__allowFreeze may only be set at initial function call (options.allowFreeze parameter)");
-      } else if (key2 === "__proxyHandler" || key2 === "__target" || allowFreeze && (key2 === "__isFrozen" || key2 === "__frozenTarget" || key2 === "freeze" || key2 === "revert" || key2 === "commit" || key2 === "silentCommit")) {
-        throw new Error(`${key2} is a read-only property`);
-      }
-      let path = getPath(proxy, key2);
-      let parent2 = getTopParent(proxy);
-      if (this.__isFrozen) {
-        if (value !== null && typeof value === "object" && Array.isArray(object)) {
-          while (value.__target !== undefined) {
-            value = value.__target;
-          }
-          let proxy2 = toDeepProxy(value, Object.assign({}, options, {
-            key: key2,
-            parent: receiver
-          }));
-          target[key2].freeze();
-          if (typeof setter === "function") {
-            setter([{
-              target,
-              key: key2,
-              value: proxy2,
-              path,
-              topParent: parent2
-            }]);
-          } else {
-            this.__frozenTarget[key2] = target[key2];
-            target[key2] = proxy2;
-          }
-        } else {
-          this.__frozenTarget[key2] = target[key2];
-          target[key2] = value;
-        }
-      } else if (value !== null && typeof value === "object") {
-        while (value.__target !== undefined) {
-          value = value.__target;
-        }
-        let proxy2 = toDeepProxy(value, Object.assign({}, options, {
-          key: key2,
-          parent: receiver
-        }));
-        if (typeof setter === "function") {
-          if (allowFreeze)
-            return setter([{
-              target,
-              key: key2,
-              value: proxy2,
-              path,
-              topParent: parent2
-            }]);
-          else
-            return setter(target, key2, proxy2, path, parent2);
-        } else {
-          target[key2] = proxy2;
-          if (typeof setListener === "function") {
-            if (allowFreeze)
-              return setListener([{
-                target,
-                key: key2,
-                value: proxy2,
-                path,
-                topParent: parent2
-              }]);
-            else
-              return setListener(target, key2, proxy2, path, parent2);
-          }
-        }
-      } else {
-        if (typeof setter === "function") {
-          if (allowFreeze)
-            return setter([{
-              target,
-              key: key2,
-              value,
-              path,
-              topParent: parent2
-            }]);
-          else
-            return setter(target, key2, value, path, parent2);
-        } else {
-          if (value === undefined) {
-            delete target[key2];
-          } else {
-            target[key2] = value;
-          }
-          if (typeof setListener === "function") {
-            if (allowFreeze)
-              return setListener([{
-                target,
-                key: key2,
-                value,
-                path,
-                topParent: parent2
-              }]);
-            else
-              return setListener(target, key2, value, path, parent2);
-          }
-        }
-      }
-      return true;
-    },
-    __parent: parent,
-    __key: key,
-    __target: null,
-    __proxyHandler: null,
-    __isFrozen: false,
-    __frozenTarget: undefined,
-    __allowFreeze: null,
-    freeze: () => {
-      if (allowFreeze) {
-        if (!deepProxyHandler.__isFrozen) {
-          deepProxyHandler.__isFrozen = true;
-          deepProxyHandler.__frozenTarget = {};
-        } else {
-          throw new Error("cannot freeze a deep proxy that is already frozen");
-        }
-      } else {
-        throw new Error("cannot freeze the deep proxy, freezing is not allowed");
-      }
-    },
-    revert: () => {
-      if (deepProxyHandler.__isFrozen) {
-        for (let entry of Object.entries(deepProxyHandler.__frozenTarget)) {
-          if (entry[1] === undefined)
-            delete object[entry[0]];
-          else
-            object[entry[0]] = entry[1];
-        }
-        deepProxyHandler.__frozenTarget = undefined;
-        deepProxyHandler.__isFrozen = false;
-      } else {
-        throw new Error("cannot revert a deep proxy that is not frozen");
-      }
-    },
-    commit: () => {
-      if (deepProxyHandler.__isFrozen) {
-        deepProxyHandler.silentCommit(true);
-        if (typeof setListener === "function") {
-          let path = getPath(proxy);
-          let parent2 = getTopParent(proxy);
-          let changes = [];
-          for (let key2 of Object.keys(deepProxyHandler.__frozenTarget)) {
-            changes.push({
-              target: proxy.__target,
-              key: key2,
-              value: proxy.__target[key2],
-              path: [...path, key2],
-              topParent: parent2
-            });
-          }
-          setListener(changes);
-        }
-        deepProxyHandler.__frozenTarget = undefined;
-      } else {
-        throw new Error("cannot commit a deep proxy that is not frozen");
-      }
-    },
-    silentCommit: (keepFrozenTarget = false) => {
-      if (deepProxyHandler.__isFrozen) {
-        for (let key2 of Object.keys(deepProxyHandler.__frozenTarget)) {
-          let child = object[key2];
-          if (child !== null && typeof child === "object" && child.__allowFreeze && child.__isFrozen && typeof child.silentCommit === "function")
-            child.silentCommit();
-          if (child === undefined)
-            delete object[key2];
-        }
-        if (!keepFrozenTarget)
-          deepProxyHandler.__frozenTarget = undefined;
-        deepProxyHandler.__isFrozen = false;
-      } else {
-        throw new Error("cannot silent commit a deep proxy that is not frozen");
-      }
-    }
-  };
-  let proxy;
-  if (typeof object !== "object" || object === null)
-    return proxy = new Proxy({}, deepProxyHandler);
-  proxy = new Proxy(object, deepProxyHandler);
-  for (let entry of Object.entries(object)) {
-    let key2 = entry[0];
-    let val = entry[1];
-    if (typeof val === "object" && val !== null) {
-      object[key2] = toDeepProxy(val, Object.assign({}, options, {
-        key: key2,
-        parent: proxy
-      }));
-    } else if (val === undefined) {
-      delete object[key2];
-    }
+  constructor(sender) {
+    this.sender = sender;
   }
-  return proxy;
 }
-try {
-  exports_deepProxy.toDeepProxy = toDeepProxy;
-} catch (error) {}
+
+class KcpWebSocketClient extends KcpLink {
+  ws;
+  constructor(webSocketPath = "/kisdb", loaded) {
+    super((com) => this.ws.send(com));
+    this.ws = new WebSocket(webSocketPath);
+    this.ws.onmessage = ({ data: msg }) => {
+      this.dyns.set("", new KcpList(this.send.bind(this, ""), msg));
+      this.ws.onmessage = ({ data: msg2 }) => {
+        super.received(msg2);
+      };
+      loaded?.(this.dyns.get(""));
+    };
+  }
+  close() {
+    return this.ws.close();
+  }
+}
+
+class KcpList extends List {
+  sendKCP;
+  constructor(sendKCP, json) {
+    super(json);
+    this.sendKCP = sendKCP;
+  }
+  receiveKCP(command) {
+    const i1 = command.indexOf(",");
+    const i2 = command.indexOf(",", i1 + 1);
+    const op = parseInt(i1 === -1 ? command : command.slice(0, i1));
+    //@ts-ignore
+    console.log(`receiveKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`);
+    switch (op) {
+      case 0 /* SET */:
+        super.set(parseInt(command.slice(i1 + 1, i2)), JSON.parse(command.slice(i2 + 1)));
+        break;
+      case 2 /* PUSH */:
+        super.push(JSON.parse(command.slice(i1 + 1)));
+        break;
+      case 3 /* POP */:
+        super.pop();
+        break;
+      case 5 /* UNSHIFT */:
+        super.unshift(JSON.parse(command.slice(i1 + 1)));
+        break;
+      case 4 /* SHIFT */:
+        super.shift();
+        break;
+      case 6 /* INSERT */:
+        super.insert(parseInt(command.slice(i1 + 1, i2)), JSON.parse(command.slice(i2 + 1)));
+        break;
+      case 7 /* REMOVE */:
+        super.remove(parseInt(command.slice(i1 + 1)));
+        break;
+    }
+  }
+  push(...values) {
+    super.push(...values);
+    for (const value of values)
+      this.sendKCP(2 /* PUSH */, JSON.stringify(value));
+  }
+  unshift(...values) {
+    super.unshift(...values);
+    for (const value of values)
+      this.sendKCP(5 /* UNSHIFT */, JSON.stringify(value));
+  }
+  pop() {
+    const temp = super.pop();
+    if (temp !== undefined)
+      this.sendKCP(3 /* POP */);
+    return temp;
+  }
+  shift() {
+    const temp = super.shift();
+    if (temp !== undefined)
+      this.sendKCP(4 /* SHIFT */);
+    return temp;
+  }
+  insert(index, value) {
+    super.insert(index, value);
+    this.sendKCP(6 /* INSERT */, index, JSON.stringify(value));
+  }
+  set(index, value) {
+    super.set(index, value);
+    this.sendKCP(0 /* SET */, index, JSON.stringify(value));
+  }
+  replace(oldValue, newValue) {
+    super.replace.call(this, oldValue, newValue);
+  }
+  remove(index) {
+    const temp = super.remove(index);
+    if (temp !== undefined)
+      this.sendKCP(7 /* REMOVE */, index);
+    return temp;
+  }
+  delete(value) {
+    return super.delete.call(this, value);
+  }
+  clear() {
+    super.clear.call(this);
+  }
+}
 
 // client.js
 var serverStorage;
 if (typeof window !== "undefined") {
-  console.log("connecting websocket...");
-  const ws = new WebSocket("/kisdb");
-  ws.addEventListener("error", console.error);
-  ws.addEventListener("open", console.log);
-  let firstMsg = true;
-  ws.addEventListener("message", ({ data: msg }) => {
-    if (firstMsg) {
-      serverStorage = new List(msg);
-      serverStorage.onAdd.on((val) => ws.send(JSON.stringify(["insert", serverStorage.indexOf(val), val])));
-      serverStorage.onRemove.on((val) => ws.send(JSON.stringify(["remove", serverStorage.indexOf(val), ""])));
-      firstMsg = false;
-      console.log("Connected!");
-      return;
-    }
-    console.log("msg:", msg);
-  });
+  new KcpWebSocketClient("/kisdb", (root) => serverStorage = root);
 }
