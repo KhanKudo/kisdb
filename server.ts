@@ -1,7 +1,7 @@
 import fs from 'fs'
-import { KcpList } from './kcp'
+import { KcpLink, Operators } from './kcp'
 
-const dbs = new Map<string, KcpList>()
+const dbs = new Map<string, KcpLink>()
 const subs = new Map<string, Set<(command: string) => void>>()
 const unsaved = new Set<string>()
 
@@ -13,8 +13,9 @@ function revertDB(db: string) {
 
   const memory = dbs.get(db)!
 
-  memory.clear()
-  memory.push(...file)
+  throw new Error('Reverting is not yet supported!')
+  // memory.clear()
+  // memory.push(...file)
 
   return memory
 
@@ -40,18 +41,19 @@ function loadDB(db: string) {
       json = file
 
     dbs.set(db,
-      new KcpList(
+      new KcpLink(
         (...parts) => {
           const com = parts.join(',')
           subs.get(db)?.forEach(send => send(com))
         },
-        json
+        JSON.parse(json)
       )
     )
     if (commands) {
       console.log(`loading appended kcp commands[${commands.length}] from DB "${db}"...`)
+      const link = dbs.get(db)!
       for (const com of commands)
-        dbs.get(db)!.receiveKCP(com.slice(1))
+        link.receiveKCP(com)
 
       console.log(`all ${commands.length} commands from DB "${db}" were loaded!`)
 
@@ -64,7 +66,7 @@ function loadDB(db: string) {
 
 function saveDB(db: string) {
   //TODO will require metadata
-  fs.writeFileSync(`${db}.kisdb.json`, JSON.stringify(dbs.get(db)))
+  fs.writeFileSync(`${db}.kisdb.json`, dbs.get(db)!.toString())
   unsaved.delete(db)
 }
 
@@ -76,7 +78,7 @@ if (!fs.existsSync(defaultFile)) {
 
 type WSData = {
   dbname: string,
-  read: KcpList,
+  read: KcpLink,
   receive: (command: string) => void,
   send: (command: string) => void,
 }
@@ -90,7 +92,7 @@ export default {
 
     const dbfile = `${dbname}.kisdb.json`
 
-    function write(func: (db: KcpList) => any) {
+    function write(func: (db: KcpLink) => any) {
       try {
         const res = func(data)
         saveDB(dbname)
@@ -116,7 +118,7 @@ export default {
       //   }
       // },
       receive(command: string) {
-        data.receiveKCP(command.slice(1))
+        data.receiveKCP(command)
         unsaved.add(dbname)
         fs.appendFileSync(dbfile, `\n${command}`)
       },
@@ -132,7 +134,7 @@ export default {
 
     subs.get(dbname)!.add(ws.data.send)
 
-    ws.send(JSON.stringify(data))
+    ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(data.root))
     console.log(`Socket opened with DB ${dbname}`)
   },
   message(ws: Bun.ServerWebSocket<WSData>, message: string | Buffer): void | Promise<void> {

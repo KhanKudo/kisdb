@@ -5,5 +5,5 @@ import { KcpWebSocketClient } from "./kcp"
 var serverStorage
 
 if (typeof window !== 'undefined') {
-  new KcpWebSocketClient('/kisdb', root => serverStorage = root)
+  new KcpWebSocketClient('/kisdb').obs.on(root => serverStorage = root)
 }

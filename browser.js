@@ -45,7 +45,7 @@ class Collection {
   data = [];
   onAdd = new Listenable;
   onRemove = new Listenable;
-  constructor(add, remove = async () => { }, src = null) {
+  constructor(add, remove = async () => {}, src = null) {
     this.add = add;
     this.remove = remove;
     this.src = src;
@@ -244,9 +244,59 @@ class Collection {
     return res?.[0] ?? null;
   }
   async clear() {
-    while (await this.pop() !== null) { }
+    while (await this.pop() !== null) {}
   }
 }
+// ../dynamics/src/Observable.ts
+class Observable extends Listenable {
+  defaultForceUpdate;
+  _value;
+  _preChangeFunc = null;
+  constructor(initialValue, defaultForceUpdate = false, callOnSubscribe = true) {
+    super(callOnSubscribe ? (listener) => listener(this._value, this._value) : null);
+    this.defaultForceUpdate = defaultForceUpdate;
+    this._value = initialValue;
+  }
+  get value() {
+    return this._value;
+  }
+  set value(newValue) {
+    this.set(newValue);
+  }
+  get() {
+    return this._value;
+  }
+  trigger() {
+    this.emit(this._value, this._value);
+    return this;
+  }
+  set(newValue, forceUpdate = this.defaultForceUpdate) {
+    if (this._preChangeFunc !== null)
+      newValue = this._preChangeFunc(newValue, this._value);
+    if (!forceUpdate && this._value === newValue)
+      return;
+    const oldValue = this._value;
+    this._value = newValue;
+    this.emit(this._value, oldValue);
+  }
+  setPreChangeFunc(preChangeFunc) {
+    this._preChangeFunc = preChangeFunc;
+    return this;
+  }
+  toString() {
+    return this._value?.toString() || JSON.stringify(this._value);
+  }
+  toJSON() {
+    return this._value;
+  }
+  fromJSON(json) {
+    if (typeof json === "string")
+      json = JSON.parse(json);
+    this.set(json);
+    return this;
+  }
+}
+
 // ../dynamics/src/ObservableSet.ts
 class ObservableSet extends Listenable {
   _value = new Set;
@@ -350,8 +400,8 @@ class List {
   }
   _handleChange(index, value, insert = false) {
     if (value !== undefined) {
-      if (!insert) { } else if (index === 0) { } else if (index === this.data.length) { } else { }
-    } else if (index === 0) { } else if (index === this.data.length) { } else { }
+      if (!insert) {} else if (index === 0) {} else if (index === this.data.length) {} else {}
+    } else if (index === 0) {} else if (index === this.data.length) {} else {}
     if (this._ignoreCallback) {
       this._ignoreCallback = false;
       console.log("update:", index, value, insert);
@@ -503,48 +553,121 @@ class List {
     return this.remove(index);
   }
   clear() {
-    while (this.pop() !== undefined) { }
+    while (this.pop() !== undefined) {}
   }
 }
 // kcp.ts
 var Operators;
 ((Operators2) => {
-  Operators2[Operators2["SET"] = 0] = "SET";
-  Operators2[Operators2["DELETE"] = 1] = "DELETE";
-  Operators2[Operators2["PUSH"] = 2] = "PUSH";
-  Operators2[Operators2["POP"] = 3] = "POP";
-  Operators2[Operators2["SHIFT"] = 4] = "SHIFT";
-  Operators2[Operators2["UNSHIFT"] = 5] = "UNSHIFT";
-  Operators2[Operators2["INSERT"] = 6] = "INSERT";
-  Operators2[Operators2["REMOVE"] = 7] = "REMOVE";
+  Operators2[Operators2["OVERWRITE"] = 0] = "OVERWRITE";
+  Operators2[Operators2["SET"] = 1] = "SET";
+  Operators2[Operators2["DELETE"] = 2] = "DELETE";
+  Operators2[Operators2["PUSH"] = 3] = "PUSH";
+  Operators2[Operators2["POP"] = 4] = "POP";
+  Operators2[Operators2["SHIFT"] = 5] = "SHIFT";
+  Operators2[Operators2["UNSHIFT"] = 6] = "UNSHIFT";
+  Operators2[Operators2["INSERT"] = 7] = "INSERT";
+  Operators2[Operators2["REMOVE"] = 8] = "REMOVE";
 })(Operators ||= {});
+function toKcpProxy(sendKCP, data = {}, loc = "", parent = null) {
+  const receivedKCP = (command) => {
+    const i1 = command.indexOf(",");
+    const i2 = command.indexOf(",", i1 + 1);
+    const op = parseInt(i1 === -1 ? command : command.slice(0, i1));
+    const getKey = () => command.slice(i1 + 1, i2);
+    console.log(`receivedKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`);
+    switch (op) {
+      case 0 /* OVERWRITE */:
+        Object.assign(data, JSON.parse(command.slice(i1 + 1)));
+        break;
+      case 1 /* SET */:
+        Reflect.set(data, getKey(), JSON.parse(command.slice(i2 + 1)));
+        break;
+      case 2 /* DELETE */:
+        Reflect.deleteProperty(data, getKey());
+        break;
+    }
+  };
+  return new Proxy(data, {
+    get(_, key) {
+      if (key === "__loc") {
+        if (parent)
+          return parent.__loc + "." + loc;
+        else
+          return loc;
+      } else if (key === "__receiveKCP") {
+        return receivedKCP;
+      } else {
+        return Reflect.get(data, key);
+      }
+    },
+    set(_, key, value) {
+      if (key === "__kcp") {
+        receivedKCP(value);
+      } else if (key === "__loc" || key === "__receiveKCP") {
+        return false;
+      } else {
+        if (value !== undefined) {
+          Reflect.set(data, key, value);
+          sendKCP(loc, 1 /* SET */, key, JSON.stringify(value));
+        } else {
+          Reflect.deleteProperty(data, key);
+          sendKCP(loc, 2 /* DELETE */, key);
+        }
+      }
+      return true;
+    },
+    deleteProperty(_, key) {
+      if (key in data) {
+        Reflect.deleteProperty(data, key);
+        sendKCP(loc, 2 /* DELETE */, key);
+        return true;
+      } else {
+        return false;
+      }
+    }
+  });
+}
 
 class KcpLink {
   sender;
-  dyns = new Map;
-  received(command) {
-    const eiLoc = command.indexOf(",");
-    this.dyns.get(command.slice(0, eiLoc))?.receiveKCP(command.slice(eiLoc + 1));
+  obs;
+  get root() {
+    return this.obs.value;
   }
-  send(...commandParts) {
+  set root(value) {}
+  receiveKCP(command) {
+    const eiLoc = command.indexOf(",");
+    const loc = command.slice(0, eiLoc).split(".").slice(1);
+    let temp = this.root;
+    for (const part of loc)
+      temp = temp[part];
+    temp.__kcp = command.slice(eiLoc + 1);
+    if (command.startsWith("," + 0 /* OVERWRITE */ + ","))
+      this.obs.trigger();
+  }
+  sendKCP(...commandParts) {
     return this.sender(commandParts.join(","));
   }
-  constructor(sender) {
+  constructor(sender, init) {
     this.sender = sender;
+    this.obs = new Observable(toKcpProxy(this.sendKCP.bind(this), init), false, init !== undefined);
+  }
+  toJSON() {
+    this.root;
+  }
+  toString() {
+    return JSON.stringify(this.root);
   }
 }
 
 class KcpWebSocketClient extends KcpLink {
   ws;
-  constructor(webSocketPath = "/kisdb", loaded) {
+  constructor(webSocketPath = "/kisdb") {
     super((com) => this.ws.send(com));
     this.ws = new WebSocket(webSocketPath);
     this.ws.onmessage = ({ data: msg }) => {
-      this.dyns.set("", new KcpList(this.send.bind(this, ""), msg));
-      this.ws.onmessage = ({ data: msg2 }) => {
-        super.received(msg2);
-      };
-      loaded?.(this.dyns.get(""));
+      super.receiveKCP(msg);
     };
   }
   close() {
@@ -552,91 +675,8 @@ class KcpWebSocketClient extends KcpLink {
   }
 }
 
-class KcpList extends List {
-  sendKCP;
-  constructor(sendKCP, json) {
-    super(json);
-    this.sendKCP = sendKCP;
-  }
-  receiveKCP(command) {
-    const i1 = command.indexOf(",");
-    const i2 = command.indexOf(",", i1 + 1);
-    const op = parseInt(i1 === -1 ? command : command.slice(0, i1));
-    //@ts-ignore
-    console.log(`receiveKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`);
-    switch (op) {
-      case 0 /* SET */:
-        super.set(parseInt(command.slice(i1 + 1, i2)), JSON.parse(command.slice(i2 + 1)));
-        break;
-      case 2 /* PUSH */:
-        super.push(JSON.parse(command.slice(i1 + 1)));
-        break;
-      case 3 /* POP */:
-        super.pop();
-        break;
-      case 5 /* UNSHIFT */:
-        super.unshift(JSON.parse(command.slice(i1 + 1)));
-        break;
-      case 4 /* SHIFT */:
-        super.shift();
-        break;
-      case 6 /* INSERT */:
-        super.insert(parseInt(command.slice(i1 + 1, i2)), JSON.parse(command.slice(i2 + 1)));
-        break;
-      case 7 /* REMOVE */:
-        super.remove(parseInt(command.slice(i1 + 1)));
-        break;
-    }
-  }
-  push(...values) {
-    super.push(...values);
-    for (const value of values)
-      this.sendKCP(2 /* PUSH */, JSON.stringify(value));
-  }
-  unshift(...values) {
-    super.unshift(...values);
-    for (const value of values)
-      this.sendKCP(5 /* UNSHIFT */, JSON.stringify(value));
-  }
-  pop() {
-    const temp = super.pop();
-    if (temp !== undefined)
-      this.sendKCP(3 /* POP */);
-    return temp;
-  }
-  shift() {
-    const temp = super.shift();
-    if (temp !== undefined)
-      this.sendKCP(4 /* SHIFT */);
-    return temp;
-  }
-  insert(index, value) {
-    super.insert(index, value);
-    this.sendKCP(6 /* INSERT */, index, JSON.stringify(value));
-  }
-  set(index, value) {
-    super.set(index, value);
-    this.sendKCP(0 /* SET */, index, JSON.stringify(value));
-  }
-  replace(oldValue, newValue) {
-    super.replace.call(this, oldValue, newValue);
-  }
-  remove(index) {
-    const temp = super.remove(index);
-    if (temp !== undefined)
-      this.sendKCP(7 /* REMOVE */, index);
-    return temp;
-  }
-  delete(value) {
-    return super.delete.call(this, value);
-  }
-  clear() {
-    super.clear.call(this);
-  }
-}
-
 // client.js
 var serverStorage;
 if (typeof window !== "undefined") {
-  new KcpWebSocketClient("/kisdb", (root) => serverStorage = root);
+  new KcpWebSocketClient("/kisdb").obs.on((root) => serverStorage = root);
 }
