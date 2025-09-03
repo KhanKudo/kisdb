@@ -10,22 +10,56 @@ export const enum Operators {
   REMOVE
 }
 
-function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, loc = '', parent: null | { __loc: string } = null) {
-  const receivedKCP = (command: string) => {
+function popPath(loc: string): [string, string] {
+  if (!loc.includes('.'))
+    return ['', loc]
+
+  const index = loc.lastIndexOf('.')
+
+  return [
+    loc.slice(0, index),
+    loc.slice(index + 1)
+  ]
+}
+
+//TODO: expand with 'empty-proxies' so that data can easily be added, even when it's nested and doesn't exist yet
+function navigateData(source: Record<any, any>, location: string) {
+  let temp = source
+  for (const part of location.split('.')) {
+    if (typeof temp === 'object' && temp !== null && part in temp)
+      temp = Reflect.get(temp, part)
+    else
+      return undefined
+  }
+
+  return temp
+}
+
+function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, upperLoc = '', parent: null | { __loc: string } = null) {
+  const getLoc = () => parent ? (parent.__loc + '.' + upperLoc) : upperLoc
+
+  function receivedKCP(command: string) {
     const i1 = command.indexOf(',')
     const i2 = command.indexOf(',', i1 + 1)
     const op = parseInt(i1 === -1 ? command : command.slice(0, i1))
-    const getKey = () => command.slice(i1 + 1, i2)
+    const getKey = () => command.slice(i1 + 1, i2 === -1 ? undefined : i2)
 
     //@ts-ignore
     console.log(`receivedKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`)
 
     switch (op) {
       case Operators.OVERWRITE:
-        Object.assign(data, JSON.parse(command.slice(i1 + 1)))
+        //TODO: doesn't account for object-to-array overwrites and reverse
+        const value = JSON.parse(command.slice(i1 + 1))
+        for (const k in data)
+          if (!(k in value))
+            Reflect.deleteProperty(data, k)
+
+        for (const k in value)
+          setProp(k, value[k])
         break
       case Operators.SET:
-        Reflect.set(data, getKey(), JSON.parse(command.slice(i2 + 1)))
+        setProp(getKey(), JSON.parse(command.slice(i2 + 1)))
         break
       case Operators.DELETE:
         Reflect.deleteProperty(data, getKey())
@@ -33,17 +67,20 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, lo
     }
   }
 
-  return new Proxy(data, {
+  const proxy = <Record<any, any> & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string }>new Proxy<Record<any, any>>(data, {
     get(_, key) {
       if (key === '__loc') {
         //TODO: optimize by only fetching parent loc, if it's an array, otherwise hard-set loc
-        if (parent)
-          return parent.__loc + '.' + loc
-        else
-          return loc
+        return getLoc()
       }
+      // else if (key === '__raw') {
+      //   return data
+      // }
       else if (key === '__receiveKCP') {
         return receivedKCP
+      }
+      else if (typeof key === 'string' && key.includes('.')) {
+        return navigateData(data, key)
       }
       else {
         return Reflect.get(data, key)
@@ -53,25 +90,48 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, lo
       if (key === '__kcp') {
         receivedKCP(value)
       }
-      else if (key === '__loc' || key === '__receiveKCP') {
+      else if (key === '__loc' || key === '__receiveKCP') {// || key === '__raw') {
         return false
+      }
+      else if (typeof key === 'symbol') {
+        Reflect.set(data, key, value)
+      }
+      else if (key.includes('.')) {
+        const [p1, k] = popPath(key)
+        const targetProxy = navigateData(data, p1)
+        if (targetProxy === null || typeof targetProxy !== 'object')
+          return false
+
+        Reflect.set(targetProxy, k, value) // forwards to local target proxy
       }
       else {
         if (value !== undefined) {
-          Reflect.set(data, key, value)
-          sendKCP(loc, Operators.SET, key, JSON.stringify(value))
+          setProp(key, value)
+          sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
         }
         else {
           Reflect.deleteProperty(data, key)
-          sendKCP(loc, Operators.DELETE, key)
+          sendKCP(getLoc(), Operators.DELETE, key)
         }
       }
       return true
     },
     deleteProperty(_, key): boolean {
-      if (key in data) {
+      if (typeof key === 'symbol') {
+        return Reflect.deleteProperty(data, key)
+      }
+      else if (key.includes('.')) {
+        const [p1, k] = popPath(key)
+
+        const proxy = navigateData(data, p1)
+        if (proxy === null || typeof proxy !== 'object')
+          return false
+
+        return Reflect.deleteProperty(proxy, k)
+      }
+      else if (key in data) {
         Reflect.deleteProperty(data, key)
-        sendKCP(loc, Operators.DELETE, key)
+        sendKCP(getLoc(), Operators.DELETE, key)
         return true
       }
       else {
@@ -79,6 +139,33 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, lo
       }
     }
   })
+
+  function setProp(key: string, value: any) {
+    if (key.includes('.')) {
+      const [p1, k] = popPath(key)
+      const targetProxy = navigateData(data, p1)
+      if (typeof targetProxy === 'object' && targetProxy !== null)
+        return Reflect.set(targetProxy, k, value) // forwards to target's local proxy
+      return false
+    }
+    else if (typeof value === 'object' && value !== null) {
+      if (Array.isArray(value)) {
+        console.warn('Arrays are not yet supported!', getLoc() + '.' + key, data)
+        return false
+      }
+      else {
+        data[key] = toKcpProxy(sendKCP, value, key, proxy)
+        return true
+      }
+    }
+    else if (data[key] !== value)
+      data[key] = value
+  }
+
+  for (const k in data)
+    setProp(k, data[k])
+
+  return proxy
 }
 
 export class KcpLink {

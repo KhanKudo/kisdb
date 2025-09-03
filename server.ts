@@ -134,7 +134,7 @@ export default {
 
     subs.get(dbname)!.add(ws.data.send)
 
-    ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(data.root))
+    ws.send(',' + Operators.OVERWRITE + ',' + data.toString())
     console.log(`Socket opened with DB ${dbname}`)
   },
   message(ws: Bun.ServerWebSocket<WSData>, message: string | Buffer): void | Promise<void> {

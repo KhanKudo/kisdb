@@ -569,34 +569,58 @@ var Operators;
   Operators2[Operators2["INSERT"] = 7] = "INSERT";
   Operators2[Operators2["REMOVE"] = 8] = "REMOVE";
 })(Operators ||= {});
-function toKcpProxy(sendKCP, data = {}, loc = "", parent = null) {
-  const receivedKCP = (command) => {
+function popPath(loc) {
+  if (!loc.includes("."))
+    return ["", loc];
+  const index = loc.lastIndexOf(".");
+  return [
+    loc.slice(0, index),
+    loc.slice(index + 1)
+  ];
+}
+function navigateData(source, location) {
+  let temp = source;
+  for (const part of location.split(".")) {
+    if (typeof temp === "object" && temp !== null && part in temp)
+      temp = Reflect.get(temp, part);
+    else
+      return;
+  }
+  return temp;
+}
+function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
+  const getLoc = () => parent ? parent.__loc + "." + upperLoc : upperLoc;
+  function receivedKCP(command) {
     const i1 = command.indexOf(",");
     const i2 = command.indexOf(",", i1 + 1);
     const op = parseInt(i1 === -1 ? command : command.slice(0, i1));
-    const getKey = () => command.slice(i1 + 1, i2);
+    const getKey = () => command.slice(i1 + 1, i2 === -1 ? undefined : i2);
     console.log(`receivedKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`);
     switch (op) {
       case 0 /* OVERWRITE */:
-        Object.assign(data, JSON.parse(command.slice(i1 + 1)));
+        const value = JSON.parse(command.slice(i1 + 1));
+        for (const k in data)
+          if (!(k in value))
+            Reflect.deleteProperty(data, k);
+        for (const k in value)
+          setProp(k, value[k]);
         break;
       case 1 /* SET */:
-        Reflect.set(data, getKey(), JSON.parse(command.slice(i2 + 1)));
+        setProp(getKey(), JSON.parse(command.slice(i2 + 1)));
         break;
       case 2 /* DELETE */:
         Reflect.deleteProperty(data, getKey());
         break;
     }
-  };
-  return new Proxy(data, {
+  }
+  const proxy = new Proxy(data, {
     get(_, key) {
       if (key === "__loc") {
-        if (parent)
-          return parent.__loc + "." + loc;
-        else
-          return loc;
+        return getLoc();
       } else if (key === "__receiveKCP") {
         return receivedKCP;
+      } else if (typeof key === "string" && key.includes(".")) {
+        return navigateData(data, key);
       } else {
         return Reflect.get(data, key);
       }
@@ -606,27 +630,64 @@ function toKcpProxy(sendKCP, data = {}, loc = "", parent = null) {
         receivedKCP(value);
       } else if (key === "__loc" || key === "__receiveKCP") {
         return false;
+      } else if (typeof key === "symbol") {
+        Reflect.set(data, key, value);
+      } else if (key.includes(".")) {
+        const [p1, k] = popPath(key);
+        const targetProxy = navigateData(data, p1);
+        if (targetProxy === null || typeof targetProxy !== "object")
+          return false;
+        Reflect.set(targetProxy, k, value);
       } else {
         if (value !== undefined) {
-          Reflect.set(data, key, value);
-          sendKCP(loc, 1 /* SET */, key, JSON.stringify(value));
+          setProp(key, value);
+          sendKCP(getLoc(), 1 /* SET */, key, JSON.stringify(value));
         } else {
           Reflect.deleteProperty(data, key);
-          sendKCP(loc, 2 /* DELETE */, key);
+          sendKCP(getLoc(), 2 /* DELETE */, key);
         }
       }
       return true;
     },
     deleteProperty(_, key) {
-      if (key in data) {
+      if (typeof key === "symbol") {
+        return Reflect.deleteProperty(data, key);
+      } else if (key.includes(".")) {
+        const [p1, k] = popPath(key);
+        const proxy2 = navigateData(data, p1);
+        if (proxy2 === null || typeof proxy2 !== "object")
+          return false;
+        return Reflect.deleteProperty(proxy2, k);
+      } else if (key in data) {
         Reflect.deleteProperty(data, key);
-        sendKCP(loc, 2 /* DELETE */, key);
+        sendKCP(getLoc(), 2 /* DELETE */, key);
         return true;
       } else {
         return false;
       }
     }
   });
+  function setProp(key, value) {
+    if (key.includes(".")) {
+      const [p1, k] = popPath(key);
+      const targetProxy = navigateData(data, p1);
+      if (typeof targetProxy === "object" && targetProxy !== null)
+        return Reflect.set(targetProxy, k, value);
+      return false;
+    } else if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        console.warn("Arrays are not yet supported!", getLoc() + "." + key, data);
+        return false;
+      } else {
+        data[key] = toKcpProxy(sendKCP, value, key, proxy);
+        return true;
+      }
+    } else if (data[key] !== value)
+      data[key] = value;
+  }
+  for (const k in data)
+    setProp(k, data[k]);
+  return proxy;
 }
 
 class KcpLink {
