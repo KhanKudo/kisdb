@@ -578,17 +578,20 @@ function popPath(loc) {
     loc.slice(index + 1)
   ];
 }
-function navigateData(source, location) {
-  let temp = source;
-  for (const part of location.split(".")) {
-    if (typeof temp === "object" && temp !== null && part in temp)
-      temp = Reflect.get(temp, part);
-    else
-      return;
-  }
-  return temp;
-}
 function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
+  function navigateData(source, location) {
+    let temp = source;
+    const parts = location.split(".");
+    let index = -1;
+    for (const part of parts) {
+      index++;
+      if (typeof temp === "object" && temp !== null) {
+        temp = Reflect.get(temp, part);
+      } else
+        return;
+    }
+    return temp;
+  }
   const getLoc = () => parent ? parent.__loc + "." + upperLoc : upperLoc;
   function receivedKCP(command) {
     const i1 = command.indexOf(",");
@@ -619,16 +622,27 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
         return getLoc();
       } else if (key === "__receiveKCP") {
         return receivedKCP;
+      } else if (key === "toString") {
+        return () => JSON.stringify(data);
+      } else if (key === "toJSON") {
+        return () => data;
       } else if (typeof key === "string" && key.includes(".")) {
         return navigateData(data, key);
-      } else {
+      } else if (typeof key === "symbol") {
         return Reflect.get(data, key);
+      } else {
+        if (Reflect.has(data, key)) {
+          return Reflect.get(data, key);
+        } else {
+          Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy));
+          return data[key];
+        }
       }
     },
     set(_, key, value) {
       if (key === "__kcp") {
         receivedKCP(value);
-      } else if (key === "__loc" || key === "__receiveKCP") {
+      } else if (key === "__loc" || key === "__receiveKCP" || key === "toString" || key === "toJSON") {
         return false;
       } else if (typeof key === "symbol") {
         Reflect.set(data, key, value);

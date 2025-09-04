@@ -22,20 +22,37 @@ function popPath(loc: string): [string, string] {
   ]
 }
 
-//TODO: expand with 'empty-proxies' so that data can easily be added, even when it's nested and doesn't exist yet
-function navigateData(source: Record<any, any>, location: string) {
-  let temp = source
-  for (const part of location.split('.')) {
-    if (typeof temp === 'object' && temp !== null && part in temp)
-      temp = Reflect.get(temp, part)
-    else
-      return undefined
+function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, upperLoc = '', parent: null | { __loc: string } = null) {
+  //TODO: expand with 'empty-proxies' so that data can easily be added, even when it's nested and doesn't exist yet
+  function navigateData(source: Record<any, any>, location: string) {
+    let temp = source
+    const parts = location.split('.')
+    let index = -1
+    for (const part of parts) {
+      index++
+      if (typeof temp === 'object' && temp !== null) {
+        temp = Reflect.get(temp, part)
+
+        //TODO: add array support (List/Set/...)
+        // if (/^[0-9]+$/.test(part)) {
+        //   if (Array.isArray(temp)) {
+        //     if (Reflect.has(temp, part))
+        //       temp = Reflect.get(temp, part)
+        //     else
+        //       Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}))
+        //   }
+        //   else {
+        //     return undefined
+        //   }
+        // }
+      }
+      else
+        return undefined
+    }
+
+    return temp
   }
 
-  return temp
-}
-
-function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, upperLoc = '', parent: null | { __loc: string } = null) {
   const getLoc = () => parent ? (parent.__loc + '.' + upperLoc) : upperLoc
 
   function receivedKCP(command: string) {
@@ -67,7 +84,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, up
     }
   }
 
-  const proxy = <Record<any, any> & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string }>new Proxy<Record<any, any>>(data, {
+  const proxy = <Record<any, any> & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, toString: () => string }>new Proxy<Record<any, any>>(data, {
     get(_, key) {
       if (key === '__loc') {
         //TODO: optimize by only fetching parent loc, if it's an array, otherwise hard-set loc
@@ -79,18 +96,34 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, up
       else if (key === '__receiveKCP') {
         return receivedKCP
       }
+      else if (key === 'toString') {
+        return () => JSON.stringify(data)
+      }
+      else if (key === 'toJSON') {
+        return () => data
+      }
       else if (typeof key === 'string' && key.includes('.')) {
         return navigateData(data, key)
       }
-      else {
+      else if (typeof key === 'symbol') {
         return Reflect.get(data, key)
+      }
+      else {
+        if (Reflect.has(data, key)) {
+          return Reflect.get(data, key)
+        }
+        else {
+          // Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}, part, temp as any))
+          Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy))
+          return data[key]
+        }
       }
     },
     set(_, key, value): boolean {
       if (key === '__kcp') {
         receivedKCP(value)
       }
-      else if (key === '__loc' || key === '__receiveKCP') {// || key === '__raw') {
+      else if (key === '__loc' || key === '__receiveKCP' || key === 'toString' || key === 'toJSON') {// || key === '__raw') {
         return false
       }
       else if (typeof key === 'symbol') {
