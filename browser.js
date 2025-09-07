@@ -623,9 +623,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
       } else if (key === "__receiveKCP") {
         return receivedKCP;
       } else if (key === "toString") {
-        return () => JSON.stringify(data);
+        return () => JSON.stringify(data, (key2, value) => typeof value === "object" && value !== null && !Object.keys(value).length ? undefined : value);
       } else if (key === "toJSON") {
-        return () => data;
+        return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === "object" && v !== null && !Object.keys(v).length)));
       } else if (typeof key === "string" && key.includes(".")) {
         return navigateData(data, key);
       } else if (typeof key === "symbol") {
@@ -655,7 +655,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
       } else {
         if (value !== undefined) {
           setProp(key, value);
-          sendKCP(getLoc(), 1 /* SET */, key, JSON.stringify(value));
+          if (typeof value !== "object" || value === null || Object.keys(value).length)
+            sendKCP(getLoc(), 1 /* SET */, key, JSON.stringify(value));
         } else {
           Reflect.deleteProperty(data, key);
           sendKCP(getLoc(), 2 /* DELETE */, key);

@@ -97,10 +97,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, up
         return receivedKCP
       }
       else if (key === 'toString') {
-        return () => JSON.stringify(data)
+        return () => JSON.stringify(data, (key, value) => (typeof value === 'object' && value !== null && !Object.keys(value).length) ? undefined : value)
       }
       else if (key === 'toJSON') {
-        return () => data
+        return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === 'object' && v !== null && !Object.keys(v).length)))
       }
       else if (typeof key === 'string' && key.includes('.')) {
         return navigateData(data, key)
@@ -140,7 +140,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> = {}, up
       else {
         if (value !== undefined) {
           setProp(key, value)
-          sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
+          // no KCP for empty-objects, as they are the default behavior
+          if (typeof value !== 'object' || value === null || Object.keys(value).length)
+            sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
         }
         else {
           Reflect.deleteProperty(data, key)
