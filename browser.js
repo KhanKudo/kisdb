@@ -563,11 +563,15 @@ var Operators;
   Operators2[Operators2["SET"] = 1] = "SET";
   Operators2[Operators2["DELETE"] = 2] = "DELETE";
   Operators2[Operators2["PUSH"] = 3] = "PUSH";
-  Operators2[Operators2["POP"] = 4] = "POP";
-  Operators2[Operators2["SHIFT"] = 5] = "SHIFT";
-  Operators2[Operators2["UNSHIFT"] = 6] = "UNSHIFT";
-  Operators2[Operators2["INSERT"] = 7] = "INSERT";
-  Operators2[Operators2["REMOVE"] = 8] = "REMOVE";
+  Operators2[Operators2["UNSHIFT"] = 4] = "UNSHIFT";
+  Operators2[Operators2["POP"] = 5] = "POP";
+  Operators2[Operators2["SHIFT"] = 6] = "SHIFT";
+  Operators2[Operators2["SPLICE"] = 7] = "SPLICE";
+  Operators2[Operators2["REVERSE"] = 8] = "REVERSE";
+  Operators2[Operators2["REORDER"] = 9] = "REORDER";
+  Operators2[Operators2["RESIZE"] = 10] = "RESIZE";
+  Operators2[Operators2["FILL"] = 11] = "FILL";
+  Operators2[Operators2["COPY_WITHIN"] = 12] = "COPY_WITHIN";
 })(Operators ||= {});
 function popPath(loc) {
   if (!loc.includes("."))
@@ -586,6 +590,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
     for (const part of parts) {
       index++;
       if (typeof temp === "object" && temp !== null) {
+        if (Array.isArray(temp) && !/^-?[0-9]+$/.test(part) && part !== "length")
+          return;
         temp = Reflect.get(temp, part);
       } else
         return;
@@ -614,8 +620,41 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
       case 2 /* DELETE */:
         Reflect.deleteProperty(data, getKey());
         break;
+      case 3 /* PUSH */:
+        data.push(...JSON.parse(command.slice(i1 + 1)));
+        break;
+      case 4 /* UNSHIFT */:
+        data.unshift(...JSON.parse(command.slice(i1 + 1)));
+        break;
+      case 5 /* POP */:
+        data.pop();
+        break;
+      case 6 /* SHIFT */:
+        data.shift();
+        break;
+      case 7 /* SPLICE */:
+        data.splice(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), ...JSON.parse(command.slice(command.indexOf(",", i2 + 1) + 1)));
+        break;
+      case 8 /* REVERSE */:
+        data.reverse();
+        break;
+      case 9 /* REORDER */: {
+        const orig = Array.from(data);
+        JSON.parse(command.slice(i1 + 1)).forEach((newIndex, oldIndex) => data[newIndex] = orig[oldIndex]);
+        break;
+      }
+      case 10 /* RESIZE */:
+        data.length = parseInt(command.slice(i1 + 1));
+        break;
+      case 11 /* FILL */:
+        data.fill(JSON.parse(command.slice(command.indexOf(",", i2 + 1) + 1)), parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)));
+        break;
+      case 12 /* COPY_WITHIN */:
+        data.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(",", i2 + 1) + 1)));
+        break;
     }
   }
+  const isArray = Array.isArray(data);
   const proxy = new Proxy(data, {
     get(_, key) {
       if (key === "__loc") {
@@ -623,13 +662,129 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
       } else if (key === "__receiveKCP") {
         return receivedKCP;
       } else if (key === "toString") {
-        return () => JSON.stringify(data, (key2, value) => typeof value === "object" && value !== null && !Object.keys(value).length ? undefined : value);
+        if (isArray)
+          return () => data.toString();
+        else
+          return () => JSON.stringify(data, (key2, value) => typeof value === "object" && value !== null && !Object.keys(value).length ? undefined : value);
       } else if (key === "toJSON") {
-        return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === "object" && v !== null && !Object.keys(v).length)));
+        if (isArray)
+          return () => Array.from(data);
+        else
+          return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === "object" && v !== null && !Object.keys(v).length)));
       } else if (typeof key === "string" && key.includes(".")) {
         return navigateData(data, key);
       } else if (typeof key === "symbol") {
         return Reflect.get(data, key);
+      } else if (isArray) {
+        if (/^-?[0-9]+$/.test(key)) {
+          const index = key.startsWith("-") ? data.length + parseInt(key) : parseInt(key);
+          if (!Number.isSafeInteger(index))
+            throw new Error("Provided index is too large: " + index.toString());
+          if (index < 0)
+            return;
+          else
+            return data[index];
+        } else if (key === "push") {
+          return (...items) => {
+            if (items.length === 0)
+              return data.length;
+            const temp = data.push(...items);
+            sendKCP(getLoc(), 3 /* PUSH */, JSON.stringify(items));
+            return temp;
+          };
+        } else if (key === "unshift") {
+          return (...items) => {
+            if (items.length === 0)
+              return data.length;
+            const temp = data.unshift(...items);
+            sendKCP(getLoc(), 4 /* UNSHIFT */, JSON.stringify(items));
+            return temp;
+          };
+        } else if (key === "pop") {
+          return () => {
+            if (data.length === 0)
+              return;
+            const temp = data.pop();
+            sendKCP(getLoc(), 5 /* POP */);
+            return temp;
+          };
+        } else if (key === "shift") {
+          return () => {
+            if (data.length === 0)
+              return;
+            const temp = data.shift();
+            sendKCP(getLoc(), 6 /* SHIFT */);
+            return temp;
+          };
+        } else if (key === "reverse") {
+          return () => {
+            if (data.length < 2)
+              return proxy;
+            data.reverse();
+            sendKCP(getLoc(), 8 /* REVERSE */);
+            return proxy;
+          };
+        } else if (key === "splice") {
+          return (startIndex, removeCount = 0, ...insertItems) => {
+            if (!Number.isSafeInteger(startIndex))
+              throw new Error("Provided startIndex is not an integer: " + startIndex.toString());
+            if (!Number.isSafeInteger(removeCount))
+              throw new Error("Provided removeCount is not an integer: " + removeCount.toString());
+            if ((removeCount === 0 || data.length === 0) && insertItems.length === 0)
+              return [];
+            const temp = data.splice(startIndex, removeCount, ...insertItems);
+            sendKCP(getLoc(), 7 /* SPLICE */, startIndex, removeCount, JSON.stringify(insertItems));
+            return temp;
+          };
+        } else if (key === "sort") {
+          return (compareFn) => {
+            const orig = Array.from(data);
+            data.sort(compareFn);
+            let changed = false;
+            const order = orig.map((item, index) => {
+              const i = data.indexOf(item);
+              if (!changed && i !== index)
+                changed = true;
+              return i;
+            });
+            if (changed)
+              sendKCP(getLoc(), 9 /* REORDER */, JSON.stringify(order));
+            return proxy;
+          };
+        } else if (key === "fill") {
+          return (value, start = 0, end = data.length) => {
+            if (!Number.isSafeInteger(start))
+              throw new Error("Provided start index is not an integer: " + start.toString());
+            if (!Number.isSafeInteger(end))
+              throw new Error("Provided end index is not an integer: " + end.toString());
+            const si = Math.max(0, start < 0 ? data.length + start : start);
+            const ei = Math.min(data.length, Math.max(0, end < 0 ? data.length + end : end));
+            if (si >= ei || si >= data.length)
+              return proxy;
+            data.fill(value, si, ei);
+            sendKCP(getLoc(), 11 /* FILL */, si, ei, JSON.stringify(value));
+          };
+        } else if (key === "copyWithin") {
+          return (target, start, end = data.length) => {
+            if (!Number.isSafeInteger(target))
+              throw new Error("Provided target index is not an integer: " + start.toString());
+            if (!Number.isSafeInteger(start))
+              throw new Error("Provided start index is not an integer: " + start.toString());
+            if (!Number.isSafeInteger(end))
+              throw new Error("Provided end index is not an integer: " + end.toString());
+            if (target >= data.length || start >= data.length)
+              return proxy;
+            const ti = Math.max(0, target < 0 ? data.length + target : target);
+            const si = Math.max(0, start < 0 ? data.length + start : start);
+            const ei = Math.min(data.length, si + (data.length - ti), Math.max(0, end < 0 ? data.length + end : end));
+            if (ti === si || si >= ei)
+              return proxy;
+            data.copyWithin(ti, si, ei);
+            sendKCP(getLoc(), 12 /* COPY_WITHIN */, ti, si, ei);
+          };
+        } else {
+          return Reflect.get(data, key);
+        }
       } else {
         if (Reflect.has(data, key)) {
           return Reflect.get(data, key);
@@ -652,10 +807,28 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
         if (targetProxy === null || typeof targetProxy !== "object")
           return false;
         Reflect.set(targetProxy, k, value);
+      } else if (isArray) {
+        if (key === "length") {
+          if (typeof value !== "number" || value < 0 || !Number.isSafeInteger(value))
+            throw new Error(`Invalid value passed for array.length, accepted is a positive integer, given was ${typeof value} "${value}"`);
+          data.length = value;
+          sendKCP(getLoc(), 10 /* RESIZE */, value);
+        } else if (/^-?[0-9]+$/.test(key)) {
+          const index = key.startsWith("-") ? data.length + parseInt(key) : parseInt(key);
+          if (!Number.isSafeInteger(index))
+            throw new Error("Provided index is too large: " + index.toString());
+          if (index < 0)
+            return false;
+          else {
+            data[index] = value;
+            sendKCP(getLoc(), 1 /* SET */, index, JSON.stringify(value));
+          }
+        } else
+          return false;
       } else {
         if (value !== undefined) {
           setProp(key, value);
-          if (typeof value !== "object" || value === null || Object.keys(value).length)
+          if (typeof value !== "object" || value === null || Object.keys(value).length || Array.isArray(value))
             sendKCP(getLoc(), 1 /* SET */, key, JSON.stringify(value));
         } else {
           Reflect.deleteProperty(data, key);
@@ -673,6 +846,20 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
         if (proxy2 === null || typeof proxy2 !== "object")
           return false;
         return Reflect.deleteProperty(proxy2, k);
+      } else if (isArray) {
+        if (/^-?[0-9]+$/.test(key)) {
+          const index = key.startsWith("-") ? data.length + parseInt(key) : parseInt(key);
+          if (!Number.isSafeInteger(index))
+            throw new Error("Provided index is too large: " + index.toString());
+          if (index < 0)
+            return false;
+          else {
+            delete data[index];
+            sendKCP(getLoc(), 2 /* DELETE */, index);
+            return true;
+          }
+        } else
+          return false;
       } else if (key in data) {
         Reflect.deleteProperty(data, key);
         sendKCP(getLoc(), 2 /* DELETE */, key);
@@ -683,6 +870,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
     }
   });
   function setProp(key, value) {
+    if (isArray)
+      throw new Error("setProp() doesn't yet support arrays! " + getLoc() + "." + key + " in data: " + JSON.stringify(data));
     if (key.includes(".")) {
       const [p1, k] = popPath(key);
       const targetProxy = navigateData(data, p1);
@@ -690,18 +879,14 @@ function toKcpProxy(sendKCP, data = {}, upperLoc = "", parent = null) {
         return Reflect.set(targetProxy, k, value);
       return false;
     } else if (typeof value === "object" && value !== null) {
-      if (Array.isArray(value)) {
-        console.warn("Arrays are not yet supported!", getLoc() + "." + key, data);
-        return false;
-      } else {
-        data[key] = toKcpProxy(sendKCP, value, key, proxy);
-        return true;
-      }
+      data[key] = toKcpProxy(sendKCP, value, key, proxy);
+      return true;
     } else if (data[key] !== value)
       data[key] = value;
   }
-  for (const k in data)
-    setProp(k, data[k]);
+  if (!isArray)
+    for (const k in data)
+      setProp(k, data[k]);
   return proxy;
 }
 
@@ -730,7 +915,7 @@ class KcpLink {
     this.obs = new Observable(toKcpProxy(this.sendKCP.bind(this), init), false, init !== undefined);
   }
   toJSON() {
-    this.root;
+    return this.root;
   }
   toString() {
     return JSON.stringify(this.root);

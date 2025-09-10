@@ -66,7 +66,7 @@ function loadDB(db: string) {
 
 function saveDB(db: string) {
   //TODO will require metadata
-  fs.writeFileSync(`${db}.kisdb.json`, dbs.get(db)!.toString())
+  fs.writeFileSync(`${db}.kisdb.json`, JSON.stringify(dbs.get(db)))
   unsaved.delete(db)
 }
 
@@ -134,7 +134,7 @@ export default {
 
     subs.get(dbname)!.add(ws.data.send)
 
-    ws.send(',' + Operators.OVERWRITE + ',' + data.toString())
+    ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(data))
     console.log(`Socket opened with DB ${dbname}`)
   },
   message(ws: Bun.ServerWebSocket<WSData>, message: string | Buffer): void | Promise<void> {
