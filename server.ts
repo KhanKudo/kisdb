@@ -72,8 +72,7 @@ function saveDB(db: string) {
 
 const defaultFile = 'default.kisdb.json'
 if (!fs.existsSync(defaultFile)) {
-  fs.writeFileSync(defaultFile, '[]')
-  // fs.writeFileSync(defaultFile, '{}')
+  fs.writeFileSync(defaultFile, '{}')
 }
 
 type WSData = {

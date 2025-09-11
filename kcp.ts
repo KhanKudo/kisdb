@@ -1,4 +1,5 @@
 import { Observable } from "dynamics"
+import { parseCommandLine } from "typescript"
 
 export const enum Operators {
   OVERWRITE,  // loc // value(json)
@@ -31,14 +32,12 @@ function popPath(loc: string): [string, string] {
   ]
 }
 
-function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] = {}, upperLoc = '', parent: null | { __loc: string } = null) {
+function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] = {}, upperLoc: string | (() => string), parent: { __loc: string } | KcpLink) {
   //TODO: expand with 'empty-proxies' so that data can easily be added, even when it's nested and doesn't exist yet
-  function navigateData(source: Record<any, any> | any[], location: string) {
-    let temp: unknown = source
+  function navigateProxy(location: string) {
+    let temp: unknown = proxy
     const parts = location.split('.')
-    let index = -1
     for (const part of parts) {
-      index++
       if (typeof temp === 'object' && temp !== null) {
         if (Array.isArray(temp) && !/^-?[0-9]+$/.test(part) && part !== 'length')
           return undefined
@@ -65,7 +64,12 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     return temp
   }
 
-  const getLoc = () => parent ? (parent.__loc + '.' + upperLoc) : upperLoc
+  function getLoc() {
+    if (parent instanceof KcpLink)
+      return ''
+    else
+      return parent.__loc + '.' + (typeof upperLoc === 'function' ? upperLoc() : upperLoc)
+  }
 
   function receivedKCP(command: string) {
     const i1 = command.indexOf(',')
@@ -73,19 +77,46 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     const op = parseInt(i1 === -1 ? command : command.slice(0, i1))
     const getKey = () => command.slice(i1 + 1, i2 === -1 ? undefined : i2)
 
-    //@ts-ignore
-    console.log(`receivedKCP > com:"${command}" i1:${i1}, i2:${i2}, op:${Operators[op]}`)
-
     switch (op) {
       case Operators.OVERWRITE:
-        //TODO: doesn't account for object-to-array overwrites and reverse
         const value = JSON.parse(command.slice(i1 + 1))
-        for (const k in data)
-          if (!(k in value))
-            Reflect.deleteProperty(data, k)
+        if (
+          Array.isArray(data) === Array.isArray(value) &&
+          typeof data === 'object' && data !== null &&
+          typeof value === 'object' && value !== null
+        ) {
+          if (Array.isArray(data)) {
+            data.splice(0, data.length, ...prepForArray(value))
+          }
+          else if (typeof value === 'object' && value !== null) {
+            for (const k in data)
+              if (!(k in value))
+                Reflect.deleteProperty(data, k)
 
-        for (const k in value)
-          setProp(k, value[k])
+            for (const k in value)
+              setProp(k, value[k])
+          }
+
+          //TODO: this trigger is a temporary solution until proper observability on all paths and objects is implemented. The obs below however is intentional!
+          //      it should be removed then, since the base object isn't actually being replaced, only it's content. Unlike below
+          if (parent instanceof KcpLink)
+            parent.obs.trigger()
+        }
+        else if (parent instanceof KcpLink) {
+          if (typeof value === 'object' && value !== null)
+            parent.obs.set(toKcpProxy(sendKCP, value, '', parent), true)
+          else
+            parent.obs.set(value, true)
+        }
+        else {
+          Reflect.set(
+            Reflect.get(parent, '__DANGER_RAW_DATA'),
+            typeof upperLoc === 'function' ? upperLoc() : upperLoc,
+            (typeof value === 'object' && value !== null) ?
+              toKcpProxy(sendKCP, value, upperLoc, parent) :
+              value
+          )
+        }
         break
       case Operators.SET:
         setProp(getKey(), JSON.parse(command.slice(i2 + 1)))
@@ -94,10 +125,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         Reflect.deleteProperty(data, getKey())
         break
       case Operators.PUSH:
-        data.push(...JSON.parse(command.slice(i1 + 1))) //TODO: add also support for proxies within arrays (!IMPORTANT!)
+        data.push(...prepForArray(JSON.parse(command.slice(i1 + 1))))
         break
       case Operators.UNSHIFT:
-        data.unshift(...JSON.parse(command.slice(i1 + 1))) //TODO: add also support for proxies within arrays (!IMPORTANT!)
+        data.unshift(...prepForArray(JSON.parse(command.slice(i1 + 1))))
         break
       case Operators.POP:
         data.pop()
@@ -119,10 +150,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       case Operators.RESIZE:
         data.length = parseInt(command.slice(i1 + 1))
         break
-      case Operators.FILL:
+      case Operators.FILL: //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
         data.fill(JSON.parse(command.slice(command.indexOf(',', i2 + 1) + 1)), parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)))
         break
-      case Operators.COPY_WITHIN:
+      case Operators.COPY_WITHIN: //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
         data.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(',', i2 + 1) + 1)))
         break
     }
@@ -136,9 +167,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         //TODO: optimize by only fetching parent loc, if it's an array, otherwise hard-set loc
         return getLoc()
       }
-      // else if (key === '__raw') {
-      //   return data
-      // }
+      else if (key === '__DANGER_RAW_DATA') {
+        return data // !!! DANGER !!! STRICTLY FOR INTERNAL USE ONLY !!!
+      }
       else if (key === '__receiveKCP') {
         return receivedKCP
       }
@@ -154,11 +185,11 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         else
           return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === 'object' && v !== null && !Object.keys(v).length)))
       }
-      else if (typeof key === 'string' && key.includes('.')) {
-        return navigateData(data, key)
-      }
       else if (typeof key === 'symbol') {
         return Reflect.get(data, key)
+      }
+      else if (key.includes('.')) {
+        return navigateProxy(key)
       }
       else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
@@ -179,7 +210,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (items.length === 0)
               return data.length
 
-            const temp = data.push(...items)
+            const temp = data.push(...prepForArray(items))
             sendKCP(getLoc(), Operators.PUSH, JSON.stringify(items))
             return temp
           }
@@ -189,7 +220,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (items.length === 0)
               return data.length
 
-            const temp = data.unshift(...items)
+            const temp = data.unshift(...prepForArray(items))
             sendKCP(getLoc(), Operators.UNSHIFT, JSON.stringify(items))
             return temp
           }
@@ -235,7 +266,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if ((removeCount === 0 || data.length === 0) && insertItems.length === 0)
               return []
 
-            const temp = data.splice(startIndex, removeCount, ...insertItems)
+            const temp = data.splice(startIndex, removeCount, ...prepForArray(insertItems))
             sendKCP(getLoc(), Operators.SPLICE, startIndex, removeCount, JSON.stringify(insertItems))
             return temp
           }
@@ -270,6 +301,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (si >= ei || si >= data.length)
               return proxy
 
+            //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
             data.fill(value, si, ei) //TODO: add also support for proxies within arrays and make sure there are no two proxies with same data ref (!IMPORTANT!)
             sendKCP(getLoc(), Operators.FILL, si, ei, JSON.stringify(value))
           }
@@ -303,22 +335,20 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           return Reflect.get(data, key)
         }
       }
+      else if (Reflect.has(data, key)) {
+        return Reflect.get(data, key)
+      }
       else {
-        if (Reflect.has(data, key)) {
-          return Reflect.get(data, key)
-        }
-        else {
-          // Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}, part, temp as any))
-          Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy))
-          return data[key]
-        }
+        // Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}, part, temp as any))
+        Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy))
+        return data[key]
       }
     },
     set(_, key, value): boolean {
       if (key === '__kcp') {
         receivedKCP(value)
       }
-      else if (key === '__loc' || key === '__receiveKCP' || key === 'toString' || key === 'toJSON') {// || key === '__raw') {
+      else if (key === '__loc' || key === '__receiveKCP' || key === 'toString' || key === 'toJSON' || key === '__DANGER_RAW_DATA') {
         return false
       }
       else if (typeof key === 'symbol') {
@@ -326,7 +356,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
-        const targetProxy = navigateData(data, p1)
+        const targetProxy = navigateProxy(p1)
         if (targetProxy === null || typeof targetProxy !== 'object')
           return false
 
@@ -350,7 +380,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           if (index < 0)
             return false
           else {
-            data[index] = value //TODO: add also support for proxies within arrays (!IMPORTANT!)
+            setProp(index.toString(), value)
             sendKCP(getLoc(), Operators.SET, index, JSON.stringify(value))
           }
         }
@@ -378,11 +408,11 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
 
-        const proxy = navigateData(data, p1)
-        if (proxy === null || typeof proxy !== 'object')
+        const targetProxy = navigateProxy(p1)
+        if (targetProxy === null || typeof targetProxy !== 'object')
           return false
 
-        return Reflect.deleteProperty(proxy, k)
+        return Reflect.deleteProperty(targetProxy, k)
       }
       else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
@@ -416,27 +446,40 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any) {
-    if (isArray)
-      throw new Error('setProp() doesn\'t yet support arrays! ' + getLoc() + '.' + key + ' in data: ' + JSON.stringify(data))
-
     if (key.includes('.')) {
       const [p1, k] = popPath(key)
-      const targetProxy = navigateData(data, p1)
+      const targetProxy = navigateProxy(p1)
       if (typeof targetProxy === 'object' && targetProxy !== null)
         return Reflect.set(targetProxy, k, value) // forwards to target's local proxy
       return false
     }
     else if (typeof value === 'object' && value !== null) {
-      data[key] = toKcpProxy(sendKCP, value, key, proxy) //TODO: make sure that there are never two proxies with same data ref (always clone objects)
+      Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy)) //TODO: make sure that there are never two proxies with same data ref (always clone objects)
       return true
     }
-    else if (data[key] !== value)
-      data[key] = value
+    else if (Reflect.get(data, key) !== value)
+      Reflect.set(data, key, value)
   }
 
-  if (!isArray) //TODO: add also support for proxies within arrays (!IMPORTANT!)
-    for (const k in data)
-      setProp(k, data[k])
+  // handles toKcpProxy and key and parent properties for items to be added to an array
+  function prepForArray(items: any[]): any[] {
+    for (const i in items) {
+      let item = items[i]
+      if (item !== null && typeof item === 'object')
+        item = toKcpProxy(sendKCP, item, () => {
+          const index = data.indexOf(item)
+          if (index === -1)
+            throw new Error(`Item couldn't be located in parent array [${getLoc()}]! item: ${JSON.stringify(item)}`)
+
+          return index.toString()
+        }, proxy)
+    }
+
+    return items
+  }
+
+  for (const k in data)
+    setProp(k, Reflect.get(data, k))
 
   return proxy
 }
@@ -449,8 +492,17 @@ export class KcpLink {
   }
 
   set root(value: any) {
-    //TODO: implement sync
-    // this.obs.set(value)
+    const com = `${Operators.OVERWRITE},${JSON.stringify(value)}`
+    const root = this.root
+
+    if (typeof root === 'object' && root !== null)
+      root.__kcp = com
+    else if (typeof value === 'object' && value !== null)
+      this.obs.set(toKcpProxy(this.sendKCP.bind(this), value, '', this))
+    else
+      this.obs.set(value)
+
+    this.sendKCP('', com)
   }
 
   receiveKCP(command: string) {
@@ -460,11 +512,10 @@ export class KcpLink {
     for (const part of loc)
       temp = temp[part]
 
-    temp.__kcp = command.slice(eiLoc + 1)
+    //@ts-ignore
+    console.log(`receivedKCP > loc:"${loc}", command:"${command}", op:"${Operators[parseInt(command.slice(eiLoc + 1, command.indexOf(',', eiLoc + 1)))]}"`)
 
-    //TODO: fix somehow obs to emit only once loaded from remote!
-    if (command.startsWith(',' + Operators.OVERWRITE + ','))
-      this.obs.trigger()
+    temp.__kcp = command.slice(eiLoc + 1)
   }
 
   sendKCP(...commandParts: (string | { toString(): string })[]) {
@@ -472,7 +523,11 @@ export class KcpLink {
   }
 
   constructor(private sender: (command: string) => void, init?: any) {
-    this.obs = new Observable(toKcpProxy(this.sendKCP.bind(this), init), false, init !== undefined)
+    this.obs = new Observable(
+      ((typeof init === 'object' && init !== null) ? toKcpProxy(this.sendKCP.bind(this), init, '', this) : init),
+      false,
+      init !== undefined
+    )
   }
 
   toJSON(): any {
