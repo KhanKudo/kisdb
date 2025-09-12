@@ -598,7 +598,7 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
   }
   function getLoc() {
     if (parent instanceof KcpLink)
-      return "";
+      return upperLoc;
     else
       return parent.__loc + "." + (typeof upperLoc === "function" ? upperLoc() : upperLoc);
   }
@@ -624,7 +624,7 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
             parent.obs.trigger();
         } else if (parent instanceof KcpLink) {
           if (typeof value === "object" && value !== null)
-            parent.obs.set(toKcpProxy(sendKCP, value, "", parent), true);
+            parent.obs.set(toKcpProxy(sendKCP, value, upperLoc, parent), true);
           else
             parent.obs.set(value, true);
         } else {
@@ -930,18 +930,29 @@ class KcpLink {
       root.__kcp = com;
     else if (typeof value === "object" && value !== null)
       this.obs.set(toKcpProxy(this.sendKCP.bind(this), value, "", this));
-    else
+    else if (value !== undefined)
       this.obs.set(value);
+    else
+      throw new Error("Root object may not be set to undefined, use null instead.");
     this.sendKCP("", com);
   }
   receiveKCP(command) {
     const eiLoc = command.indexOf(",");
     const loc = command.slice(0, eiLoc).split(".").slice(1);
     let temp = this.root;
-    for (const part of loc)
-      temp = temp[part];
     console.log(`receivedKCP > loc:"${loc}", command:"${command}", op:"${Operators[parseInt(command.slice(eiLoc + 1, command.indexOf(",", eiLoc + 1)))]}"`);
-    temp.__kcp = command.slice(eiLoc + 1);
+    if (typeof temp === "object" && temp !== null) {
+      for (const part of loc)
+        temp = temp[part];
+      temp.__kcp = command.slice(eiLoc + 1);
+    } else if (command.startsWith(`,${0 /* OVERWRITE */},`)) {
+      const value = JSON.parse(command.slice(command.indexOf(",", eiLoc + 1) + 1));
+      if (typeof value === "object" && value !== null)
+        this.obs.set(toKcpProxy(this.sendKCP.bind(this), value, "", this));
+      else
+        this.obs.set(value);
+    } else
+      throw new Error("Couldn't process received KCP as root is not an object, thus the only allowed command is a root-level overwrite, but instead received the above ^^^");
   }
   sendKCP(...commandParts) {
     return this.sender(commandParts.join(","));
