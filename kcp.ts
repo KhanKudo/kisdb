@@ -1,6 +1,4 @@
-import { error } from "console"
 import { Observable } from "dynamics"
-import { parseCommandLine } from "typescript"
 
 export const enum Operators {
   OVERWRITE,  // loc // value(json)
@@ -34,7 +32,6 @@ function popPath(loc: string): [string, string] {
 }
 
 function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] = {}, upperLoc: string | (() => string), parent: { __loc: string } | KcpLink) {
-  //TODO: expand with 'empty-proxies' so that data can easily be added, even when it's nested and doesn't exist yet
   function navigateProxy(location: string) {
     let temp: unknown = proxy
     const parts = location.split('.')
@@ -147,6 +144,17 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     }
   }
 
+  const listeners = new Map<string, (value: any) => void | null>()
+
+  function handleListener(key: string, value: any) {
+    if (!listeners.has(key))
+      return
+
+    const res = listeners.get(key)?.(value)
+    if (res === null)
+      listeners.delete(key)
+  }
+
   const isArray = Array.isArray(data)
 
   const proxy = <(Record<any, any> | any[]) & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
@@ -179,7 +187,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (key.includes('.')) {
         return navigateProxy(key)
       }
-      else if (isArray) {
+      else if (isArray) { //TODO: handle listeners, since op's such as "push" (yes push, if arr was popped and pushed into again) and "unshift" don't use setProp
         if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith('-') ?
             data.length + parseInt(key) :
@@ -354,8 +362,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         if (key === 'length') {
           if (typeof value !== 'number' || value < 0 || !Number.isSafeInteger(value))
             throw new Error(`Invalid value passed for array.length, accepted is a positive integer, given was ${typeof value} "${value}"`)
-          data.length = value
-          sendKCP(getLoc(), Operators.RESIZE, value)
+          if (setProp(key, value))
+            sendKCP(getLoc(), Operators.RESIZE, value)
         }
         else if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith('-') ?
@@ -365,11 +373,15 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           if (!Number.isSafeInteger(index))
             throw new Error('Provided index is too large: ' + index.toString())
 
-          if (index < 0)
-            return false
-          else {
-            setProp(index.toString(), value)
-            sendKCP(getLoc(), Operators.SET, index, JSON.stringify(value))
+          if (value !== undefined) {
+            if (index < 0)
+              return false
+            else if (setProp(index.toString(), value))
+              sendKCP(getLoc(), Operators.SET, index, JSON.stringify(value))
+          }
+          else if (index < data.length) {
+            Reflect.deleteProperty(data, index)
+            sendKCP(getLoc(), Operators.DELETE, index.toString())
           }
         }
         else
@@ -377,13 +389,16 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else {
         if (value !== undefined) {
-          setProp(key, value)
           // no KCP for empty-objects, as they are the default behavior
-          if (typeof value !== 'object' || value === null || Object.keys(value).length || Array.isArray(value))
+          if (
+            setProp(key, value) &&
+            (typeof value !== 'object' || value === null || Object.keys(value).length || Array.isArray(value))
+          )
             sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
         }
         else {
           Reflect.deleteProperty(data, key)
+          handleListener(key, undefined)
           sendKCP(getLoc(), Operators.DELETE, key)
         }
       }
@@ -424,6 +439,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else if (key in data) {
         Reflect.deleteProperty(data, key)
+        handleListener(key, undefined)
         sendKCP(getLoc(), Operators.DELETE, key)
         return true
       }
@@ -434,6 +450,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any) {
+    // console.log('setProp', key, value)
     if (key.includes('.')) {
       const [p1, k] = popPath(key)
       const targetProxy = navigateProxy(p1)
@@ -441,12 +458,22 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         return Reflect.set(targetProxy, k, value) // forwards to target's local proxy
       return false
     }
-    else if (typeof value === 'object' && value !== null) {
+    else if (typeof value === 'function' || value instanceof Observable) {
+      listeners.set(key, typeof value === 'function' ? value : value.set.bind(value)) // set listener function, do not emit value change event
+      if (value instanceof Observable)
+        value.set(Reflect.get(data, key))
+      return false
+    }
+    else if (typeof value === 'object' && value !== null) {//&& Reflect.get(data, key) !== value) {
+      handleListener(key, value)
       Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy)) //TODO: make sure that there are never two proxies with same data ref (always clone objects)
       return true
     }
-    else if (Reflect.get(data, key) !== value)
+    else if (Reflect.get(data, key) !== value) {
+      handleListener(key, value)
       Reflect.set(data, key, value)
+      return true
+    }
   }
 
   // handles toKcpProxy and key and parent properties for items to be added to an array

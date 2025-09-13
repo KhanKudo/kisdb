@@ -383,6 +383,181 @@ class ObservableSet extends Listenable {
     return this;
   }
 }
+
+// ../dynamics/src/CustomElement.ts
+function handleClassArg(element, arg) {
+  if (typeof arg === "string") {
+    element.classList.add(arg);
+  } else if (Array.isArray(arg)) {
+    element.classList.add(...arg);
+  } else if (arg instanceof Observable) {
+    arg.subscribe((newValue, oldValue) => {
+      element.classList.remove(oldValue);
+      element.classList.add(newValue);
+    });
+  } else if (arg instanceof ObservableSet) {
+    arg.subscribe((set, added, removed) => {
+      element.classList.remove(...removed);
+      element.classList.add(...set.values());
+    });
+  } else {
+    Object.entries(arg).forEach(([key, value]) => {
+      value.subscribe((state) => {
+        if (state === element.classList.contains(key))
+          return;
+        if (state)
+          element.classList.add(key);
+        else
+          element.classList.remove(key);
+      });
+    });
+  }
+}
+function handleStyleArg(element, arg) {
+  if (arg instanceof Observable) {
+    arg.subscribe((styles) => {
+      Object.assign(element.style, styles);
+    });
+  } else {
+    Object.entries(arg).forEach(([key, value]) => {
+      if (value instanceof Observable) {
+        value.subscribe((val) => {
+          element.style[key] = val;
+        });
+      } else {
+        element.style[key] = value;
+      }
+    });
+  }
+}
+function handleAttributesArg(element, arg) {
+  if (typeof arg === "string") {
+    element.setAttribute(arg, "");
+  } else if (Array.isArray(arg)) {
+    arg.forEach((val) => element.setAttribute(val, ""));
+  } else if (arg instanceof Observable) {
+    if (typeof arg.value === "string") {
+      arg.subscribe((newValue, oldValue) => {
+        element.removeAttribute(oldValue);
+        element.setAttribute(newValue, "");
+      });
+    } else {
+      let lastKeys = [];
+      arg.subscribe((value) => {
+        const keys = Object.keys(value);
+        lastKeys.forEach((key) => {
+          if (!keys.includes(key))
+            element.removeAttribute(key);
+        });
+        Object.entries(value).forEach(([key, value2]) => {
+          if (element.getAttribute(key) === value2)
+            return;
+          if (typeof value2 === "boolean") {
+            if (value2 === true)
+              element.setAttribute(key, "");
+            else
+              element.removeAttribute(key);
+          } else
+            element.setAttribute(key, value2);
+        });
+        lastKeys = keys;
+      });
+    }
+  } else if (arg instanceof ObservableSet) {
+    arg.subscribe((set, added, removed) => {
+      removed.forEach((val) => element.removeAttribute(val));
+      set.forEach((val) => element.setAttribute(val, ""));
+    });
+  } else {
+    Object.entries(arg).forEach(([key, value]) => {
+      if (typeof value === "boolean") {
+        if (value === true)
+          element.setAttribute(key, "");
+        else
+          element.removeAttribute(key);
+      } else if (typeof value === "string") {
+        element.setAttribute(key, value);
+      } else if (value instanceof Observable) {
+        if (typeof value.value === "boolean") {
+          value.subscribe((newValue, oldValue) => {
+            if (newValue === true)
+              element.setAttribute(key, "");
+            else
+              element.removeAttribute(key);
+          });
+        } else {
+          value.subscribe((newValue, oldValue) => {
+            element.setAttribute(key, newValue);
+          });
+        }
+      }
+    });
+  }
+}
+function handleValueArg(element, arg) {
+  if (typeof arg === "string") {
+    element.value = arg;
+  } else if (typeof arg === "number") {
+    element.valueAsNumber = arg;
+  } else if (arg instanceof Observable) {
+    if (typeof arg.value === "string") {
+      arg.subscribe((newValue, oldValue) => {
+        if (element.value !== newValue)
+          element.value = newValue;
+      });
+      element.addEventListener("input", (e) => {
+        arg.set(e.target.value);
+      });
+      element.addEventListener("change", (e) => {
+        arg.set(e.target.value);
+      });
+    } else if (typeof arg.value === "number") {
+      arg.subscribe((newValue, oldValue) => {
+        if (element.valueAsNumber !== newValue)
+          element.valueAsNumber = newValue;
+      });
+      element.addEventListener("input", (e) => {
+        arg.set(e.target.valueAsNumber);
+      });
+      element.addEventListener("change", (e) => {
+        arg.set(e.target.valueAsNumber);
+      });
+    }
+  }
+}
+function handleTextArg(element, arg) {
+  if (typeof arg === "string") {
+    element.innerText = arg;
+  } else if (arg instanceof Observable) {
+    arg.subscribe((newValue, oldValue) => {
+      if (element.innerText !== newValue)
+        element.innerText = newValue;
+    });
+  }
+}
+function element(...args) {
+  const tagName = args.find((arg) => typeof arg === "string");
+  const element2 = document.createElement(tagName ?? "div");
+  for (const arg of args) {
+    if (typeof arg === "object") {
+      Object.entries(arg).forEach(([key, value]) => {
+        if (/id|type/.test(key))
+          element2[key] = value;
+      });
+      if (arg.class !== undefined)
+        handleClassArg(element2, arg.class);
+      if (arg.style !== undefined)
+        handleStyleArg(element2, arg.style);
+      if (arg.attributes !== undefined)
+        handleAttributesArg(element2, arg.attributes);
+      if (arg.value !== undefined)
+        handleValueArg(element2, arg.value);
+      if (arg.innerText !== undefined)
+        handleTextArg(element2, arg.innerText);
+    }
+  }
+  return element2;
+}
 // ../dynamics/src/List.ts
 class List {
   data = [];
@@ -671,6 +846,14 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
         break;
     }
   }
+  const listeners = new Map;
+  function handleListener(key, value) {
+    if (!listeners.has(key))
+      return;
+    const res = listeners.get(key)?.(value);
+    if (res === null)
+      listeners.delete(key);
+  }
   const isArray = Array.isArray(data);
   const proxy = new Proxy(data, {
     get(_, key) {
@@ -828,27 +1011,30 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
         if (key === "length") {
           if (typeof value !== "number" || value < 0 || !Number.isSafeInteger(value))
             throw new Error(`Invalid value passed for array.length, accepted is a positive integer, given was ${typeof value} "${value}"`);
-          data.length = value;
-          sendKCP(getLoc(), 10 /* RESIZE */, value);
+          if (setProp(key, value))
+            sendKCP(getLoc(), 10 /* RESIZE */, value);
         } else if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith("-") ? data.length + parseInt(key) : parseInt(key);
           if (!Number.isSafeInteger(index))
             throw new Error("Provided index is too large: " + index.toString());
-          if (index < 0)
-            return false;
-          else {
-            setProp(index.toString(), value);
-            sendKCP(getLoc(), 1 /* SET */, index, JSON.stringify(value));
+          if (value !== undefined) {
+            if (index < 0)
+              return false;
+            else if (setProp(index.toString(), value))
+              sendKCP(getLoc(), 1 /* SET */, index, JSON.stringify(value));
+          } else if (index < data.length) {
+            Reflect.deleteProperty(data, index);
+            sendKCP(getLoc(), 2 /* DELETE */, index.toString());
           }
         } else
           return false;
       } else {
         if (value !== undefined) {
-          setProp(key, value);
-          if (typeof value !== "object" || value === null || Object.keys(value).length || Array.isArray(value))
+          if (setProp(key, value) && (typeof value !== "object" || value === null || Object.keys(value).length || Array.isArray(value)))
             sendKCP(getLoc(), 1 /* SET */, key, JSON.stringify(value));
         } else {
           Reflect.deleteProperty(data, key);
+          handleListener(key, undefined);
           sendKCP(getLoc(), 2 /* DELETE */, key);
         }
       }
@@ -879,6 +1065,7 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
           return false;
       } else if (key in data) {
         Reflect.deleteProperty(data, key);
+        handleListener(key, undefined);
         sendKCP(getLoc(), 2 /* DELETE */, key);
         return true;
       } else {
@@ -893,11 +1080,20 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
       if (typeof targetProxy === "object" && targetProxy !== null)
         return Reflect.set(targetProxy, k, value);
       return false;
+    } else if (typeof value === "function" || value instanceof Observable) {
+      listeners.set(key, typeof value === "function" ? value : value.set.bind(value));
+      if (value instanceof Observable)
+        value.set(Reflect.get(data, key));
+      return false;
     } else if (typeof value === "object" && value !== null) {
+      handleListener(key, value);
       Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy));
       return true;
-    } else if (Reflect.get(data, key) !== value)
+    } else if (Reflect.get(data, key) !== value) {
+      handleListener(key, value);
       Reflect.set(data, key, value);
+      return true;
+    }
   }
   function prepForArray(items) {
     for (const i in items) {
@@ -987,6 +1183,11 @@ class KcpWebSocketClient extends KcpLink {
 var serverStorage;
 if (typeof window !== "undefined") {
   wsc = new KcpWebSocketClient("/kisdb");
-  wsc.obs.on((root) => serverStorage = root);
+  wsc.obs.on((root) => {
+    serverStorage = root;
+    window.x.replaceWith(element("span", {
+      innerText: root.name = new Observable
+    }));
+  });
 }
 var wsc;
