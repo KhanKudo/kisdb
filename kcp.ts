@@ -31,7 +31,7 @@ function popPath(loc: string): [string, string] {
   ]
 }
 
-function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] = {}, upperLoc: string | (() => string), parent: { __loc: string } | KcpLink) {
+function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] = {}, upperLoc: string | ((item: any) => string), parent: { __loc: string } | KcpLink) {
   function navigateProxy(location: string) {
     let temp: unknown = proxy
     const parts = location.split('.')
@@ -53,7 +53,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     if (parent instanceof KcpLink)
       return upperLoc
     else
-      return parent.__loc + '.' + (typeof upperLoc === 'function' ? upperLoc() : upperLoc)
+      return parent.__loc + '.' + (typeof upperLoc === 'function' ? upperLoc(proxy) : upperLoc)
   }
 
   function receivedKCP(command: string) {
@@ -96,7 +96,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         else {
           Reflect.set(
             Reflect.get(parent, '__DANGER_RAW_DATA'),
-            typeof upperLoc === 'function' ? upperLoc() : upperLoc,
+            typeof upperLoc === 'function' ? upperLoc(proxy) : upperLoc,
             (typeof value === 'object' && value !== null) ?
               toKcpProxy(sendKCP, value, upperLoc, parent) :
               value
@@ -157,7 +157,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
 
   const isArray = Array.isArray(data)
 
-  const proxy = <(Record<any, any> | any[]) & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
+  const proxy = <(Record<any, any> | any[]) & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
     get(_, key) {
       if (key === '__loc') {
         //TODO: optimize by only fetching parent loc, if it's an array, otherwise hard-set loc
@@ -259,8 +259,14 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (!Number.isSafeInteger(removeCount))
               throw new Error('Provided removeCount is not an integer: ' + removeCount.toString())
 
-            if ((removeCount === 0 || data.length === 0) && insertItems.length === 0)
+            startIndex = Math.max(0, startIndex < 0 ? data.length + startIndex : startIndex)
+            removeCount = Math.max(0, Math.min(removeCount, data.length - startIndex))
+
+            if (removeCount === 0 && insertItems.length === 0)
               return []
+
+            if (insertItems.length < removeCount)
+              data.length -= removeCount - insertItems.length
 
             const temp = data.splice(startIndex, removeCount, ...prepForArray(insertItems))
             sendKCP(getLoc(), Operators.SPLICE, startIndex, removeCount, JSON.stringify(insertItems))
@@ -297,8 +303,14 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (si >= ei || si >= data.length)
               return proxy
 
-            //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
-            data.fill(value, si, ei) //TODO: add also support for proxies within arrays and make sure there are no two proxies with same data ref (!IMPORTANT!)
+            if (typeof value === 'object' && value !== null) {
+              for (let i = si; i < ei; i++) {
+                setProp(i.toString(), Array.isArray(value) ? Array.from(value) : Object.assign({}, value))
+              }
+            }
+            else {
+              data.fill(value, si, ei)
+            }
             sendKCP(getLoc(), Operators.FILL, si, ei, JSON.stringify(value))
           }
         }
@@ -323,7 +335,15 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (ti === si || si >= ei)
               return proxy
 
-            data.copyWithin(ti, si, ei) //TODO: add also support for proxies within arrays and make sure that each proxy has it's correct 'upperLoc' (!IMPORTANT!)
+            for (let i = si; i < ei; i++) {
+              setProp(
+                (ti - si + i).toString(),
+                (typeof data[i] === 'object' && data[i] !== null) ?
+                  (Array.isArray(data[i]) ? Array.from(data[i].__DANGER_RAW_DATA) : Object.assign(data[i].__DANGER_RAW_DATA)) :
+                  data[i]
+              )
+            }
+
             sendKCP(getLoc(), Operators.COPY_WITHIN, ti, si, ei)
           }
         }
@@ -381,6 +401,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           }
           else if (index < data.length) {
             Reflect.deleteProperty(data, index)
+            handleListener(index.toString(), undefined)
             sendKCP(getLoc(), Operators.DELETE, index.toString())
           }
         }
@@ -391,8 +412,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         if (value !== undefined) {
           // no KCP for empty-objects, as they are the default behavior
           if (
-            setProp(key, value) &&
-            (typeof value !== 'object' || value === null || Object.keys(value).length || Array.isArray(value))
+            setProp(
+              key,
+              (typeof value === 'object' && value !== null) ? (Array.isArray(value) ? Array.from(value) : Object.assign(value)) : value
+            )
           )
             sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
         }
@@ -430,6 +453,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             return false
           else {
             delete data[index]
+            handleListener(index.toString(), undefined)
             sendKCP(getLoc(), Operators.DELETE, index)
             return true
           }
@@ -450,7 +474,6 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any) {
-    // console.log('setProp', key, value)
     if (key.includes('.')) {
       const [p1, k] = popPath(key)
       const targetProxy = navigateProxy(p1)
@@ -464,24 +487,30 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         value.set(Reflect.get(data, key))
       return false
     }
-    else if (typeof value === 'object' && value !== null) {//&& Reflect.get(data, key) !== value) {
-      handleListener(key, value)
-      Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy)) //TODO: make sure that there are never two proxies with same data ref (always clone objects)
-      return true
+    else if (typeof value === 'object' && value !== null) {
+      if (Reflect.get(data, key) !== value && (isArray || Array.isArray(value) || Object.keys(value).length)) {
+        Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy))
+        handleListener(key, value)
+        return true
+      }
+      else
+        return false
     }
     else if (Reflect.get(data, key) !== value) {
-      handleListener(key, value)
       Reflect.set(data, key, value)
+      handleListener(key, value)
       return true
+    }
+    else {
+      return false
     }
   }
 
   // handles toKcpProxy and key and parent properties for items to be added to an array
   function prepForArray(items: any[]): any[] {
     for (const i in items) {
-      let item = items[i]
-      if (item !== null && typeof item === 'object')
-        item = toKcpProxy(sendKCP, item, () => {
+      if (items[i] !== null && typeof items[i] === 'object')
+        items[i] = toKcpProxy(sendKCP, items[i], (item) => {
           const index = data.indexOf(item)
           if (index === -1)
             throw new Error(`Item couldn't be located in parent array [${getLoc()}]! item: ${JSON.stringify(item)}`)
