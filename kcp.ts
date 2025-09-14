@@ -56,11 +56,15 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       return parent.__loc + '.' + (typeof upperLoc === 'function' ? upperLoc(proxy) : upperLoc)
   }
 
+  let noKCP: boolean = false
+
   function receivedKCP(command: string) {
     const i1 = command.indexOf(',')
     const i2 = command.indexOf(',', i1 + 1)
     const op = parseInt(i1 === -1 ? command : command.slice(0, i1))
     const getKey = () => command.slice(i1 + 1, i2 === -1 ? undefined : i2)
+
+    noKCP = true
 
     switch (op) {
       case Operators.OVERWRITE:
@@ -104,44 +108,51 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         }
         break
       case Operators.SET:
-        setProp(getKey(), JSON.parse(command.slice(i2 + 1)))
+        Reflect.set(proxy, getKey(), JSON.parse(command.slice(i2 + 1)))
         break
       case Operators.DELETE:
-        Reflect.deleteProperty(data, getKey())
+        Reflect.deleteProperty(proxy, getKey())
         break
       case Operators.PUSH:
-        data.push(...prepForArray(JSON.parse(command.slice(i1 + 1))))
+        proxy.push(...JSON.parse(command.slice(i1 + 1)))
         break
       case Operators.UNSHIFT:
-        data.unshift(...prepForArray(JSON.parse(command.slice(i1 + 1))))
+        proxy.unshift(...JSON.parse(command.slice(i1 + 1)))
         break
       case Operators.POP:
-        data.pop()
+        proxy.pop()
         break
       case Operators.SHIFT:
-        data.shift()
+        proxy.shift()
         break
       case Operators.SPLICE:
-        data.splice(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), ...JSON.parse(command.slice(command.indexOf(',', i2 + 1) + 1))) //TODO: add also support for proxies within arrays (!IMPORTANT!)
+        proxy.splice(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), ...JSON.parse(command.slice(command.indexOf(',', i2 + 1) + 1)))
         break
       case Operators.REVERSE:
-        data.reverse()
+        proxy.reverse()
         break
       case Operators.REORDER: {
         const orig = Array.from(data as any[]);
-        (JSON.parse(command.slice(i1 + 1)) as any[]).forEach((newIndex, oldIndex) => (data as any[])[newIndex] = orig[oldIndex])
+        const order = JSON.parse(command.slice(i1 + 1)) as number[]
+        order.forEach((newIndex, oldIndex) => (data as any[])[newIndex] = orig[oldIndex])
+        if (listeners.size)
+          for (let i = 0; i < order.length; i++)
+            if (i !== order[i])
+              handleListener(i.toString(), (data as any[])[order[i]!])
         break
       }
       case Operators.RESIZE:
-        data.length = parseInt(command.slice(i1 + 1))
+        proxy.length = parseInt(command.slice(i1 + 1))
         break
-      case Operators.FILL: //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
-        data.fill(JSON.parse(command.slice(command.indexOf(',', i2 + 1) + 1)), parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)))
+      case Operators.FILL:
+        proxy.fill(JSON.parse(command.slice(command.indexOf(',', i2 + 1) + 1)), parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)))
         break
-      case Operators.COPY_WITHIN: //TODO: somehow appropriately call prepForArray(...) and create a unique proxy for each one and a unique object reference behind it as well!
-        data.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(',', i2 + 1) + 1)))
+      case Operators.COPY_WITHIN:
+        proxy.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(',', i2 + 1) + 1)))
         break
     }
+
+    noKCP = false
   }
 
   const listeners = new Map<string, (value: any) => void | null>()
@@ -156,6 +167,14 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   }
 
   const isArray = Array.isArray(data)
+
+  const arrayUpperLocFunc = (item: any) => {
+    const index = data.indexOf(item)
+    if (index === -1)
+      throw new Error(`Item couldn't be located in parent array [${getLoc()}]! item: ${JSON.stringify(item)}`)
+
+    return index.toString()
+  }
 
   const proxy = <(Record<any, any> | any[]) & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
     get(_, key) {
@@ -187,7 +206,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (key.includes('.')) {
         return navigateProxy(key)
       }
-      else if (isArray) { //TODO: handle listeners, since op's such as "push" (yes push, if arr was popped and pushed into again) and "unshift" don't use setProp
+      else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith('-') ?
             data.length + parseInt(key) :
@@ -207,7 +226,12 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return data.length
 
             const temp = data.push(...prepForArray(items))
-            sendKCP(getLoc(), Operators.PUSH, JSON.stringify(items))
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.PUSH, JSON.stringify(items))
+            if (listeners.size) {
+              const imax = data.length + items.length
+              for (let i = data.length; i < imax; i++)
+                handleListener(i.toString(), data[i])
+            }
             return temp
           }
         }
@@ -217,7 +241,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return data.length
 
             const temp = data.unshift(...prepForArray(items))
-            sendKCP(getLoc(), Operators.UNSHIFT, JSON.stringify(items))
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.UNSHIFT, JSON.stringify(items))
+            if (listeners.size)
+              for (let i = data.length - 1; i >= 0; i--)
+                handleListener(i.toString(), data[i])
             return temp
           }
         }
@@ -227,7 +254,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return
 
             const temp = data.pop()
-            sendKCP(getLoc(), Operators.POP)
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.POP)
+            if (listeners.size)
+              handleListener(data.length.toString(), undefined)
             return temp
           }
         }
@@ -237,7 +266,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return
 
             const temp = data.shift()
-            sendKCP(getLoc(), Operators.SHIFT)
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.SHIFT)
+            if (listeners.size)
+              for (let i = 0; i <= data.length; i++)
+                handleListener(i.toString(), data[i])
             return temp
           }
         }
@@ -247,7 +279,18 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return proxy
 
             data.reverse()
-            sendKCP(getLoc(), Operators.REVERSE)
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.REVERSE)
+            if (listeners.size) {
+              if (data.length % 2 === 0)
+                for (let i = 0; i < data.length; i++)
+                  handleListener(i.toString(), data[i])
+              else {
+                const pivot = Math.ceil(data.length / 2)
+                for (let i = 0; i < data.length; i++)
+                  if (i !== pivot)
+                    handleListener(i.toString(), data[i])
+              }
+            }
             return proxy
           }
         }
@@ -259,17 +302,25 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (!Number.isSafeInteger(removeCount))
               throw new Error('Provided removeCount is not an integer: ' + removeCount.toString())
 
-            startIndex = Math.max(0, startIndex < 0 ? data.length + startIndex : startIndex)
+            startIndex = Math.min(data.length, Math.max(0, startIndex < 0 ? data.length + startIndex : startIndex))
             removeCount = Math.max(0, Math.min(removeCount, data.length - startIndex))
 
-            if (removeCount === 0 && insertItems.length === 0)
+            const insertCount = insertItems.length
+
+            if (removeCount === 0 && insertCount === 0)
               return []
 
-            if (insertItems.length < removeCount)
-              data.length -= removeCount - insertItems.length
-
             const temp = data.splice(startIndex, removeCount, ...prepForArray(insertItems))
-            sendKCP(getLoc(), Operators.SPLICE, startIndex, removeCount, JSON.stringify(insertItems))
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.SPLICE, startIndex, removeCount, JSON.stringify(insertItems))
+            if (listeners.size) {
+              const imax = insertCount === removeCount ?
+                startIndex + removeCount :
+                insertCount > removeCount ?
+                  data.length :
+                  data.length + removeCount - insertCount
+              for (let i = startIndex; i < imax; i++)
+                handleListener(i.toString(), data[i])
+            }
             return temp
           }
         }
@@ -284,8 +335,14 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
                 changed = true
               return i
             })
-            if (changed)
-              sendKCP(getLoc(), Operators.REORDER, JSON.stringify(order))
+            if (changed) {
+              if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.REORDER, JSON.stringify(order))
+
+              if (listeners.size)
+                for (let i = 0; i < order.length; i++)
+                  if (i !== order[i])
+                    handleListener(i.toString(), data[order[i]!])
+            }
             return proxy
           }
         }
@@ -305,13 +362,18 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
 
             if (typeof value === 'object' && value !== null) {
               for (let i = si; i < ei; i++) {
-                setProp(i.toString(), Array.isArray(value) ? Array.from(value) : Object.assign({}, value))
+                data[i] = toKcpProxy(sendKCP, Array.isArray(value) ? Array.from(value) : Object.assign({}, value), arrayUpperLocFunc, proxy)
               }
             }
             else {
               data.fill(value, si, ei)
             }
-            sendKCP(getLoc(), Operators.FILL, si, ei, JSON.stringify(value))
+
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.FILL, si, ei, JSON.stringify(value))
+
+            if (listeners.size)
+              for (let i = si; i < ei; i++)
+                handleListener(i.toString(), data[i])
           }
         }
         else if (key === 'copyWithin') {
@@ -336,15 +398,18 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               return proxy
 
             for (let i = si; i < ei; i++) {
-              setProp(
-                (ti - si + i).toString(),
-                (typeof data[i] === 'object' && data[i] !== null) ?
-                  (Array.isArray(data[i]) ? Array.from(data[i].__DANGER_RAW_DATA) : Object.assign(data[i].__DANGER_RAW_DATA)) :
-                  data[i]
-              )
+              data[ti - si + i] = toKcpProxy(sendKCP, (typeof data[i] === 'object' && data[i] !== null) ?
+                (Array.isArray(data[i]) ? Array.from(data[i].__DANGER_RAW_DATA) : Object.assign(data[i].__DANGER_RAW_DATA)) :
+                data[i], arrayUpperLocFunc, proxy)
             }
 
-            sendKCP(getLoc(), Operators.COPY_WITHIN, ti, si, ei)
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.COPY_WITHIN, ti, si, ei)
+
+            if (listeners.size) {
+              const imax = ti + ei - si
+              for (let i = ti; i < imax; i++)
+                handleListener(i.toString(), data[i])
+            }
           }
         }
         else {
@@ -382,8 +447,11 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         if (key === 'length') {
           if (typeof value !== 'number' || value < 0 || !Number.isSafeInteger(value))
             throw new Error(`Invalid value passed for array.length, accepted is a positive integer, given was ${typeof value} "${value}"`)
-          if (setProp(key, value))
-            sendKCP(getLoc(), Operators.RESIZE, value)
+          if (setProp(key, value)) {
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.RESIZE, value)
+            if (listeners.size)
+              handleListener(key, value)
+          }
         }
         else if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith('-') ?
@@ -396,13 +464,17 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           if (value !== undefined) {
             if (index < 0)
               return false
-            else if (setProp(index.toString(), value))
-              sendKCP(getLoc(), Operators.SET, index, JSON.stringify(value))
+            else if (setProp(index.toString(), value)) {
+              if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.SET, index.toString(), JSON.stringify(value))
+              if (listeners.size)
+                handleListener(index.toString(), value)
+            }
           }
           else if (index < data.length) {
             Reflect.deleteProperty(data, index)
-            handleListener(index.toString(), undefined)
-            sendKCP(getLoc(), Operators.DELETE, index.toString())
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, index.toString())
+            if (listeners.size)
+              handleListener(index.toString(), undefined)
           }
         }
         else
@@ -416,13 +488,16 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               key,
               (typeof value === 'object' && value !== null) ? (Array.isArray(value) ? Array.from(value) : Object.assign(value)) : value
             )
-          )
-            sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
+          ) {
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.SET, key, JSON.stringify(value))
+            if (listeners.size)
+              handleListener(key, value)
+          }
         }
         else {
           Reflect.deleteProperty(data, key)
+          if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, key)
           handleListener(key, undefined)
-          sendKCP(getLoc(), Operators.DELETE, key)
         }
       }
       return true
@@ -453,8 +528,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             return false
           else {
             delete data[index]
+            if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, index)
             handleListener(index.toString(), undefined)
-            sendKCP(getLoc(), Operators.DELETE, index)
             return true
           }
         }
@@ -463,8 +538,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else if (key in data) {
         Reflect.deleteProperty(data, key)
+        if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, key)
         handleListener(key, undefined)
-        sendKCP(getLoc(), Operators.DELETE, key)
         return true
       }
       else {
@@ -473,7 +548,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     }
   })
 
-  function setProp(key: string, value: any) {
+  function setProp(key: string, value: any): boolean {
     if (key.includes('.')) {
       const [p1, k] = popPath(key)
       const targetProxy = navigateProxy(p1)
@@ -488,9 +563,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       return false
     }
     else if (typeof value === 'object' && value !== null) {
-      if (Reflect.get(data, key) !== value && (isArray || Array.isArray(value) || Object.keys(value).length)) {
-        Reflect.set(data, key, toKcpProxy(sendKCP, value, key, proxy))
-        handleListener(key, value)
+      if (isArray || Array.isArray(value) || Object.keys(value).length) {
+        Reflect.set(data, key, toKcpProxy(sendKCP, value, isArray ? arrayUpperLocFunc : key, proxy))
         return true
       }
       else
@@ -498,7 +572,6 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     }
     else if (Reflect.get(data, key) !== value) {
       Reflect.set(data, key, value)
-      handleListener(key, value)
       return true
     }
     else {
@@ -510,13 +583,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   function prepForArray(items: any[]): any[] {
     for (const i in items) {
       if (items[i] !== null && typeof items[i] === 'object')
-        items[i] = toKcpProxy(sendKCP, items[i], (item) => {
-          const index = data.indexOf(item)
-          if (index === -1)
-            throw new Error(`Item couldn't be located in parent array [${getLoc()}]! item: ${JSON.stringify(item)}`)
-
-          return index.toString()
-        }, proxy)
+        items[i] = toKcpProxy(sendKCP, items[i], arrayUpperLocFunc, proxy)
     }
 
     return items
