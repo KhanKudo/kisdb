@@ -1215,7 +1215,7 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
         value.set(Reflect.get(data, key));
       return false;
     } else if (typeof value === "object" && value !== null) {
-      if (isArray || Array.isArray(value) || Object.keys(value).length) {
+      if (Reflect.get(data, key) !== value && (isArray || Array.isArray(value) || Object.keys(value).length)) {
         Reflect.set(data, key, toKcpProxy(sendKCP, value, isArray ? arrayUpperLocFunc : key, proxy));
         return true;
       } else
@@ -1234,8 +1234,17 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
     }
     return items;
   }
-  for (const k in data)
-    setProp(k, Reflect.get(data, k));
+  for (const k in data) {
+    const v = Reflect.get(data, k);
+    if (typeof v === "object" && v !== null) {
+      if (Array.isArray(v)) {
+        Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy));
+      } else {
+        Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy));
+      }
+    } else if (typeof v === "function")
+      setProp(k, v);
+  }
   return proxy;
 }
 
