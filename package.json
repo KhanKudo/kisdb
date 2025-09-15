@@ -1,5 +1,5 @@
 {
-  "name": "kisdb",
+  "name": "@khankudo/kisdb",
   "module": "index.ts",
   "scripts": {
     "build": "bun build client.js --target browser --bundle --outfile browser.js",
