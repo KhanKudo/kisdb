@@ -890,7 +890,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
           return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === "object" && v !== null && !Object.keys(v).length)));
       } else if (typeof key === "symbol") {
         return Reflect.get(data, key);
-      } else if (key.includes(".")) {
+      } else if (key.includes(","))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      else if (key.includes(".")) {
         return navigateProxy(key);
       } else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
@@ -1097,7 +1099,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
         return false;
       } else if (typeof key === "symbol") {
         Reflect.set(data, key, value);
-      } else if (key.includes(".")) {
+      } else if (key.includes(","))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      else if (key.includes(".")) {
         const [p1, k] = popPath(key);
         const targetProxy = navigateProxy(p1);
         if (targetProxy === null || typeof targetProxy !== "object")
@@ -1165,7 +1169,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
     deleteProperty(_, key) {
       if (typeof key === "symbol") {
         return Reflect.deleteProperty(data, key);
-      } else if (key.includes(".")) {
+      } else if (key.includes(","))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      else if (key.includes(".")) {
         const [p1, k] = popPath(key);
         const targetProxy = navigateProxy(p1);
         if (targetProxy === null || typeof targetProxy !== "object")
@@ -1203,7 +1209,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
     }
   });
   function setProp(key, value) {
-    if (key.includes(".")) {
+    if (key.includes(","))
+      throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+    else if (key.includes(".")) {
       const [p1, k] = popPath(key);
       const targetProxy = navigateProxy(p1);
       if (typeof targetProxy === "object" && targetProxy !== null)

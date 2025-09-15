@@ -203,6 +203,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (typeof key === 'symbol') {
         return Reflect.get(data, key)
       }
+      else if (key.includes(','))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
       else if (key.includes('.')) {
         return navigateProxy(key)
       }
@@ -435,6 +437,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (typeof key === 'symbol') {
         Reflect.set(data, key, value)
       }
+      else if (key.includes(','))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
         const targetProxy = navigateProxy(p1)
@@ -506,6 +510,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       if (typeof key === 'symbol') {
         return Reflect.deleteProperty(data, key)
       }
+      else if (key.includes(','))
+        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
 
@@ -549,7 +555,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any): boolean {
-    if (key.includes('.')) {
+    if (key.includes(','))
+      throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
+    else if (key.includes('.')) {
       const [p1, k] = popPath(key)
       const targetProxy = navigateProxy(p1)
       if (typeof targetProxy === 'object' && targetProxy !== null)
