@@ -1,14 +1,7 @@
-import wsh from "./server"
+import { webSocketHandler as wsh, routesHandler as rh } from "./server"
 
 const server = Bun.serve({
-  routes: {
-    '/kisdb'(req, server) {
-      server.upgrade(req)
-    },
-    '/kisdb/:db'(req, server) {
-      server.upgrade(req, { data: req.params })
-    }
-  },
+  routes: rh,
   hostname: '0.0.0.0',
   port: 3001,
   websocket: wsh,

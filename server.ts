@@ -82,7 +82,16 @@ type WSData = {
   send: (command: string) => void,
 }
 
-export default {
+export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
+  '/kisdb'(req, server) {
+    server.upgrade(req)
+  },
+  '/kisdb/:dbname'(req, server) {
+    server.upgrade(req, { data: req.params })
+  }
+}
+
+export const webSocketHandler: Bun.WebSocketHandler<WSData> = {
   open(ws: Bun.ServerWebSocket<WSData>): void {
     let dbname = 'default'
     if (ws.data !== null && typeof ws.data === 'object' && 'db' in ws.data && typeof ws.data.db === 'string') {
