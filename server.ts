@@ -3,9 +3,13 @@ import { KcpLink, Operators } from './kcp'
 
 const dbs = new Map<string, KcpLink>()
 const subs = new Map<string, Set<(command: string) => void>>()
-const unsaved = new Set<string>()
+const uncompacted = new Set<string>()
+const dbACT = new Map<string, AutoCompactionType>()
 
-export function loadDB(dbname: string, kcpSender: (command: string) => void) {
+export type AutoCompactionType = 'manual' | 'whenUnloaded' | 'whenLoaded' | 'whenLoadedOrUnloaded'
+
+// The autoCompactionType is only respected upon first load of DB, to change it unload all instances and load the DB again
+export function loadDB(dbname: string, kcpSender: (command: string) => void, autoCompactionType: AutoCompactionType = 'whenUnloaded') {
   if (!subs.has(dbname))
     subs.set(dbname, new Set())
   subs.get(dbname)!.add(kcpSender)
@@ -28,13 +32,13 @@ export function loadDB(dbname: string, kcpSender: (command: string) => void) {
     dbs.set(dbname,
       new KcpLink(
         (com) => {
-          unsaved.add(dbname)
+          uncompacted.add(dbname)
           fs.appendFileSync(dbfile, `\n${com}`)
           subs.get(dbname)?.forEach(send => send(com))
         },
         JSON.parse(json),
         (com) => {
-          unsaved.add(dbname)
+          uncompacted.add(dbname)
           fs.appendFileSync(dbfile, `\n${com}`)
         },
         dbname
@@ -48,7 +52,13 @@ export function loadDB(dbname: string, kcpSender: (command: string) => void) {
 
       console.log(`all ${commands.length} commands from DB "${dbname}" were loaded!`)
 
-      unsaved.add(dbname)
+      uncompacted.add(dbname)
+    }
+
+    dbACT.set(dbname, autoCompactionType)
+    if (autoCompactionType === 'whenLoaded' || autoCompactionType === 'whenLoadedOrUnloaded') {
+      if (commands)
+        saveDB(dbname)
     }
   }
 
@@ -62,23 +72,26 @@ export function unloadDB(dbname: string, kcpSender: (command: string) => void) {
     console.log(`Socket closed, DB ${dbname} still subscribed`)
   }
   else {
-    if (unsaved.has(dbname)) {
-      saveDB(dbname)
-      console.log(`Socket closed, DB ${dbname} saved`)
+    if (uncompacted.has(dbname)) {
+      if (dbACT.get(dbname) === 'whenUnloaded' || dbACT.get(dbname) === 'whenLoadedOrUnloaded') {
+        saveDB(dbname)
+        console.log(`Socket closed, DB ${dbname} compacted`)
+      }
     }
     else {
-      console.log(`Socket closed, DB ${dbname} had no unsaved changes`)
+      console.log(`Socket closed, DB ${dbname} was already compacted`)
     }
     subs.delete(dbname)
     dbs.delete(dbname)
+    dbACT.delete(dbname)
   }
 }
 
-// can be done manually to compacten the DB during runtime, otherwise done automatically when unloaded by all instances
+// can be used to manually compacten the DB, otherwise done automatically according to the set AutoCompactionType
 export function saveDB(db: string) {
   //TODO will require metadata
   fs.writeFileSync(`${db}.kisdb.json`, JSON.stringify(dbs.get(db)))
-  unsaved.delete(db)
+  uncompacted.delete(db)
 }
 
 export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
