@@ -9,7 +9,7 @@ const dbACT = new Map<string, AutoCompactionType>()
 export type AutoCompactionType = 'manual' | 'whenUnloaded' | 'whenLoaded' | 'whenLoadedOrUnloaded'
 
 // The autoCompactionType is only respected upon first load of DB, to change it unload all instances and load the DB again
-export function loadDB(dbname: string, kcpSender: (command: string) => void, autoCompactionType: AutoCompactionType = 'whenUnloaded') {
+export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => void, autoCompactionType: AutoCompactionType = 'whenUnloaded'): KcpLink<T> {
   if (!subs.has(dbname))
     subs.set(dbname, new Set())
   subs.get(dbname)!.add(kcpSender)
@@ -30,7 +30,7 @@ export function loadDB(dbname: string, kcpSender: (command: string) => void, aut
       json = file
 
     dbs.set(dbname,
-      new KcpLink(
+      new KcpLink<T>(
         (com) => {
           uncompacted.add(dbname)
           fs.appendFileSync(dbfile, `\n${com}`)

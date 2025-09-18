@@ -614,21 +614,21 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   return proxy
 }
 
-export class KcpLink {
-  readonly obs: Observable<any>
+export class KcpLink<T = any> {
+  readonly obs: Observable<T>
 
   get root() {
     return this.obs.value
   }
 
-  set root(value: any) {
+  set root(value: T) {
     const com = `${Operators.OVERWRITE},${JSON.stringify(value)}`
     const root = this.root
 
     if (typeof root === 'object' && root !== null)
-      root.__kcp = com
+      (<any>root).__kcp = com
     else if (typeof value === 'object' && value !== null)
-      this.obs.set(toKcpProxy(this.sendKCP.bind(this), value, '', this))
+      this.obs.set(<T>toKcpProxy(this.sendKCP.bind(this), value, '', this))
     else if (value !== undefined)
       this.obs.set(value)
     else
@@ -649,15 +649,15 @@ export class KcpLink {
 
     if (typeof temp === 'object' && temp !== null) {
       for (const part of loc)
-        temp = temp[part]
+        temp = (<any>temp)[part];
 
-      temp.__kcp = command.slice(eiLoc + 1)
+      (<any>temp).__kcp = command.slice(eiLoc + 1)
     }
     else if (command.startsWith(`,${Operators.OVERWRITE},`)) {
       const value = JSON.parse(command.slice(command.indexOf(',', eiLoc + 1) + 1))
 
       if (typeof value === 'object' && value !== null)
-        this.obs.set(toKcpProxy(this.sendKCP.bind(this), value, '', this))
+        this.obs.set(<T>toKcpProxy(this.sendKCP.bind(this), value, '', this))
       else
         this.obs.set(value)
     }
@@ -669,15 +669,15 @@ export class KcpLink {
     return this.sender(commandParts.join(','))
   }
 
-  constructor(private sender: (command: string) => void, init?: any, private kcpReceiverListener?: (command: string) => void, public readonly dbname: string = 'default') {
-    this.obs = new Observable(
-      ((typeof init === 'object' && init !== null) ? toKcpProxy(this.sendKCP.bind(this), init, '', this) : init),
+  constructor(private sender: (command: string) => void, init?: T, private kcpReceiverListener?: (command: string) => void, public readonly dbname: string = 'default') {
+    this.obs = new Observable<T>(
+      <T>((typeof init === 'object' && init !== null) ? toKcpProxy(this.sendKCP.bind(this), init, '', this) : init),
       false,
       init !== undefined
     )
   }
 
-  toJSON(): any {
+  toJSON(): T {
     return this.root
   }
 
@@ -686,7 +686,7 @@ export class KcpLink {
   }
 }
 
-export class KcpWebSocketClient extends KcpLink {
+export class KcpWebSocketClient<T = any> extends KcpLink<T> {
   private ws: WebSocket
 
   constructor(webSocketPath: string = '/kisdb') {
