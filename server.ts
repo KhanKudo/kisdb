@@ -88,10 +88,12 @@ export function unloadDB(dbname: string, kcpSender: (command: string) => void) {
 }
 
 // can be used to manually compacten the DB, otherwise done automatically according to the set AutoCompactionType
-export function saveDB(db: string) {
-  //TODO will require metadata
-  fs.writeFileSync(`${db}.kisdb.json`, JSON.stringify(dbs.get(db)))
-  uncompacted.delete(db)
+export function saveDB(dbname: string) {
+  if (uncompacted.has(dbname)) {
+    //TODO will require metadata
+    fs.writeFileSync(`${dbname}.kisdb.json`, JSON.stringify(dbs.get(dbname)))
+    uncompacted.delete(dbname)
+  }
 }
 
 export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
