@@ -638,6 +638,8 @@ export class KcpLink {
   }
 
   receiveKCP(command: string) {
+    this.kcpReceiverListener?.(command)
+
     const eiLoc = command.indexOf(',')
     const loc = command.slice(0, eiLoc).split('.').slice(1)
     let temp = this.root
@@ -667,7 +669,7 @@ export class KcpLink {
     return this.sender(commandParts.join(','))
   }
 
-  constructor(private sender: (command: string) => void, init?: any) {
+  constructor(private sender: (command: string) => void, init?: any, private kcpReceiverListener?: (command: string) => void, public readonly dbname: string = 'default') {
     this.obs = new Observable(
       ((typeof init === 'object' && init !== null) ? toKcpProxy(this.sendKCP.bind(this), init, '', this) : init),
       false,
@@ -688,7 +690,10 @@ export class KcpWebSocketClient extends KcpLink {
   private ws: WebSocket
 
   constructor(webSocketPath: string = '/kisdb') {
-    super((com) => this.ws.send(com))
+    if (webSocketPath.startsWith('/kisdb/'))
+      super((com) => this.ws.send(com), undefined, undefined, webSocketPath.slice(webSocketPath.indexOf('/', 1) + 1))
+    else
+      super((com) => this.ws.send(com))
     this.ws = new WebSocket(webSocketPath)
     this.ws.onmessage = ({ data: msg }) => { super.receiveKCP(msg) }
   }
