@@ -747,6 +747,9 @@ var Operators;
   Operators2[Operators2["RESIZE"] = 10] = "RESIZE";
   Operators2[Operators2["FILL"] = 11] = "FILL";
   Operators2[Operators2["COPY_WITHIN"] = 12] = "COPY_WITHIN";
+  Operators2[Operators2["FUNCTIONIZE"] = 13] = "FUNCTIONIZE";
+  Operators2[Operators2["CALL_FUNC"] = 14] = "CALL_FUNC";
+  Operators2[Operators2["RETURN_FUNC"] = 15] = "RETURN_FUNC";
 })(Operators ||= {});
 function popPath(loc) {
   if (!loc.includes("."))
@@ -788,6 +791,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
       case 0 /* OVERWRITE */:
         const value = JSON.parse(command.slice(i1 + 1));
         if (Array.isArray(data) === Array.isArray(value) && typeof data === "object" && data !== null && typeof value === "object" && value !== null) {
+          if (fullyFunctionized)
+            fullyFunctionized = false;
           if (Array.isArray(data)) {
             data.splice(0, data.length, ...prepForArray(value));
           } else if (typeof value === "object" && value !== null) {
@@ -852,9 +857,44 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
       case 12 /* COPY_WITHIN */:
         proxy.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(",", i2 + 1) + 1)));
         break;
+      case 13 /* FUNCTIONIZE */: {
+        const count = parseInt(getKey());
+        const keys = command.slice(i2 + 1).split(",");
+        if (count !== keys.length)
+          throw new Error(`Functionize Operator provided keyCount didn't match actual received key quantity: ${count} != ${keys.length}`);
+        for (const key of keys) {
+          if (key.includes(".")) {
+            const [p, k1] = popPath(key);
+            navigateProxy(p).__functionize = k1;
+          } else
+            proxy.__functionize = key;
+        }
+        break;
+      }
+      case 14 /* CALL_FUNC */: {
+        const i3 = command.indexOf(",", i2 + 1);
+        const key = getKey();
+        const id = parseInt(command.slice(i2 + 1, i3));
+        const args = JSON.parse(command.slice(i3 + 1));
+        break;
+      }
+      case 15 /* RETURN_FUNC */: {
+        const id = parseInt(getKey());
+        const result = JSON.parse(command.slice(i2 + 1));
+        if (fnzIdMappings.has(id))
+          fnzIdMappings.get(id)(result);
+        else
+          console.error("OP RETURN_FUNC's caller couldn't be found!", getLoc(), id, result);
+        break;
+      }
+      default:
+        throw new Error(`RECEIVED INVALID OPERATOR: "${op}"`);
     }
     noKCP = false;
   }
+  const fnzIdMappings = new Map;
+  const functionized = new Set;
+  let fullyFunctionized = false;
   const listeners = new Map;
   function handleListener(key, value) {
     if (!listeners.has(key))
@@ -890,10 +930,20 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
           return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === "object" && v !== null && !Object.keys(v).length)));
       } else if (typeof key === "symbol") {
         return Reflect.get(data, key);
-      } else if (key.includes(","))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      } else if (key.includes(",") || key === "")
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`);
       else if (key.includes(".")) {
         return navigateProxy(key);
+      } else if (fullyFunctionized || functionized.size && functionized.has(key)) {
+        return function(...args) {
+          if (!fullyFunctionized && !functionized.has(key))
+            throw new Error("This property was overwritten and this function is no longer valid!");
+          return new Promise((resolve, reject) => {
+            const id = fnzIdMappings.size ? Math.max(...fnzIdMappings.keys()) + 1 : 0;
+            fnzIdMappings.set(id, resolve);
+            sendKCP(getLoc(), 14 /* CALL_FUNC */, key, id, JSON.stringify(args));
+          });
+        };
       } else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
           const index = key.startsWith("-") ? data.length + parseInt(key) : parseInt(key);
@@ -1099,14 +1149,38 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
         return false;
       } else if (typeof key === "symbol") {
         Reflect.set(data, key, value);
-      } else if (key.includes(","))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      } else if (key.includes(",") || key === "")
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`);
+      else if (fullyFunctionized)
+        return false;
       else if (key.includes(".")) {
         const [p1, k] = popPath(key);
         const targetProxy = navigateProxy(p1);
         if (targetProxy === null || typeof targetProxy !== "object")
           return false;
         Reflect.set(targetProxy, k, value);
+      } else if (key === "__functionize") {
+        if (value === "") {
+          fullyFunctionized = true;
+          functionized.clear();
+          if (isArray)
+            data.length = 0;
+          else
+            for (const k in data)
+              Reflect.deleteProperty(data, k);
+          if (listeners.size)
+            for (const k in data)
+              handleListener(k, undefined);
+        } else if (isArray)
+          throw new Error(`Arrays can only be fully functionized, per-property functionization is not supported!(${getLoc()} -> ${value})`);
+        else {
+          functionized.add(value);
+          if (value in data) {
+            Reflect.deleteProperty(data, value);
+            if (listeners.size)
+              handleListener(value, undefined);
+          }
+        }
       } else if (isArray) {
         if (key === "length") {
           if (typeof value !== "number" || value < 0 || !Number.isSafeInteger(value))
@@ -1147,6 +1221,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
           return false;
       } else {
         if (value !== undefined) {
+          if (functionized.size && functionized.has(key))
+            functionized.delete(key);
           if (setProp(key, typeof value === "object" && value !== null ? Array.isArray(value) ? Array.from(value) : Object.assign(value) : value)) {
             if (noKCP)
               noKCP = false;
@@ -1155,7 +1231,9 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
             if (listeners.size)
               handleListener(key, value);
           }
-        } else {
+        } else if (!functionized.size || !functionized.has(key))
+          return false;
+        else {
           Reflect.deleteProperty(data, key);
           if (noKCP)
             noKCP = false;
@@ -1169,8 +1247,8 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
     deleteProperty(_, key) {
       if (typeof key === "symbol") {
         return Reflect.deleteProperty(data, key);
-      } else if (key.includes(","))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+      } else if (key.includes(",") || key === "")
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`);
       else if (key.includes(".")) {
         const [p1, k] = popPath(key);
         const targetProxy = navigateProxy(p1);
@@ -1203,24 +1281,30 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
           sendKCP(getLoc(), 2 /* DELETE */, key);
         handleListener(key, undefined);
         return true;
+      } else if (functionized.has(key)) {
+        functionized.delete(key);
+        if (noKCP)
+          noKCP = false;
+        else
+          sendKCP(getLoc(), 2 /* DELETE */, key);
+        return true;
       } else {
         return false;
       }
     }
   });
   function setProp(key, value) {
-    if (key.includes(","))
-      throw new Error(`Key is not allowed to contain a comma ","! (${key})`);
+    if (key.includes(",") || key === "" && typeof value !== "function")
+      throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`);
     else if (key.includes(".")) {
       const [p1, k] = popPath(key);
       const targetProxy = navigateProxy(p1);
       if (typeof targetProxy === "object" && targetProxy !== null)
         return Reflect.set(targetProxy, k, value);
       return false;
-    } else if (typeof value === "function" || value instanceof Observable) {
-      listeners.set(key, typeof value === "function" ? value : value.set.bind(value));
-      if (value instanceof Observable)
-        value.set(Reflect.get(data, key));
+    } else if (value instanceof Observable) {
+      listeners.set(key, value.set.bind(value));
+      value.set(Reflect.get(data, key));
       return false;
     } else if (typeof value === "object" && value !== null) {
       if (Reflect.get(data, key) !== value && (isArray || Array.isArray(value) || Object.keys(value).length)) {
@@ -1242,22 +1326,37 @@ function toKcpProxy(sendKCP, data = {}, upperLoc, parent) {
     }
     return items;
   }
-  for (const k in data) {
-    const v = Reflect.get(data, k);
-    if (typeof v === "object" && v !== null) {
-      if (Array.isArray(v)) {
-        Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy));
-      } else {
-        Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy));
-      }
-    } else if (typeof v === "function")
-      setProp(k, v);
+  if ("" in data) {
+    if (typeof data[""] !== "function")
+      throw new Error(`Object key may not be an empty string! (${getLoc()}[''])`);
+    else if (Object.keys(data).length !== 1)
+      throw new Error(`Object wildcard function specified but other keys are present too which is not allowed! (${Object.keys(data).join(",")})`);
+    else {}
+  } else {
+    const toFnz = [];
+    for (const k in data) {
+      const v = Reflect.get(data, k);
+      if (typeof v === "object" && v !== null) {
+        if (Array.isArray(v)) {
+          Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy));
+        } else {
+          Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy));
+        }
+      } else if (typeof v === "function")
+        toFnz.push(k);
+      else if (v instanceof Observable)
+        setProp(k, v);
+    }
+    if (toFnz.length)
+      for (const k of toFnz) {}
   }
   return proxy;
 }
 
 class KcpLink {
   sender;
+  kcpReceiverListener;
+  dbname;
   obs;
   get root() {
     return this.obs.value;
@@ -1276,6 +1375,7 @@ class KcpLink {
     this.sendKCP("", com);
   }
   receiveKCP(command) {
+    this.kcpReceiverListener?.(command);
     const eiLoc = command.indexOf(",");
     const loc = command.slice(0, eiLoc).split(".").slice(1);
     let temp = this.root;
@@ -1296,8 +1396,10 @@ class KcpLink {
   sendKCP(...commandParts) {
     return this.sender(commandParts.join(","));
   }
-  constructor(sender, init) {
+  constructor(sender, init, kcpReceiverListener, dbname = "default") {
     this.sender = sender;
+    this.kcpReceiverListener = kcpReceiverListener;
+    this.dbname = dbname;
     this.obs = new Observable(typeof init === "object" && init !== null ? toKcpProxy(this.sendKCP.bind(this), init, "", this) : init, false, init !== undefined);
   }
   toJSON() {
@@ -1311,7 +1413,10 @@ class KcpLink {
 class KcpWebSocketClient extends KcpLink {
   ws;
   constructor(webSocketPath = "/kisdb") {
-    super((com) => this.ws.send(com));
+    if (webSocketPath.startsWith("/kisdb/"))
+      super((com) => this.ws.send(com), undefined, undefined, webSocketPath.slice(webSocketPath.indexOf("/", 1) + 1));
+    else
+      super((com) => this.ws.send(com));
     this.ws = new WebSocket(webSocketPath);
     this.ws.onmessage = ({ data: msg }) => {
       super.receiveKCP(msg);

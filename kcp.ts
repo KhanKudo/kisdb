@@ -650,7 +650,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any): boolean {
-    if (key.includes(',') || key === '')
+    if (key.includes(',') || (key === '' && typeof value !== 'function'))
       throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
     else if (key.includes('.')) {
       const [p1, k] = popPath(key)
@@ -659,10 +659,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         return Reflect.set(targetProxy, k, value) // forwards to target's local proxy
       return false
     }
-    else if (typeof value === 'function' || value instanceof Observable) {
-      listeners.set(key, typeof value === 'function' ? value : value.set.bind(value)) // set listener function, do not emit value change event
-      if (value instanceof Observable)
-        value.set(Reflect.get(data, key))
+    else if (value instanceof Observable) {
+      listeners.set(key, value.set.bind(value)) // set listener function, do not emit value change event
+      value.set(Reflect.get(data, key))
       return false
     }
     else if (typeof value === 'object' && value !== null) {
@@ -692,19 +691,41 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     return items
   }
 
-  for (const k in data) {
-    const v = Reflect.get(data, k)
-    if (typeof v === 'object' && v !== null) {
-      if (Array.isArray(v)) {
-        Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy))
-      }
-      else {
-        Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy))
-      }
+  if ('' in data) {
+    if (typeof data[''] !== 'function')
+      throw new Error(`Object key may not be an empty string! (${getLoc()}[''])`)
+    else if (Object.keys(data).length !== 1)
+      throw new Error(`Object wildcard function specified but other keys are present too which is not allowed! (${Object.keys(data).join(',')})`)
+    else {
+      // TODO
     }
-    else if (typeof v === 'function')
-      setProp(k, v)
   }
+  else {
+    const toFnz: string[] = []
+
+    for (const k in data) {
+      const v = Reflect.get(data, k)
+      if (typeof v === 'object' && v !== null) {
+        if (Array.isArray(v)) {
+          Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy))
+        }
+        else {
+          Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy))
+        }
+      }
+      else if (typeof v === 'function')
+        toFnz.push(k)
+      else if (v instanceof Observable)
+        setProp(k, v)
+    }
+
+    if (toFnz.length)
+      for (const k of toFnz) {
+
+      }
+  }
+
+
 
   return proxy
 }
