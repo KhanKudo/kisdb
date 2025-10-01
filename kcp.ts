@@ -1,22 +1,25 @@
 import { Observable } from "dynamics"
 
-export const enum Operators {
-  OVERWRITE,  // loc // value(json)
-  SET,        // loc // key(index must be >=0), value(json)
-  DELETE,     // loc // key(index must be >=0)
-  PUSH,       // loc // index(>=0), values(json array)
-  UNSHIFT,    // loc // index(>=0), values(json array)
-  POP,        // loc //
-  SHIFT,      // loc //
-  SPLICE,     // loc // startIndex(can be negative), removeCount(>=0), insertValues(json array)
-  REVERSE,    // loc //
-  REORDER,    // loc // order(json number array, at each position is that item's new index)
-  RESIZE,     // loc // length(>=0)
-  FILL,       // loc // start(>=0), end(>=0), value(json)
-  COPY_WITHIN,// loc // target(>=0), start(>=0), end(>=0)
-  // INSERT,     // loc // index(>=0), values(json array)
-  // REMOVE,     // loc // index(>=0), count(>=0)
-  // REPLACE,    // loc // startIndex, values(json array)
+export const enum Operators { // IMPORTANT: Always APPEND new operators, never insert them before or inbetween, otherwise uncompacted DBs will get corrupted
+  OVERWRITE,  // loc /OP/ value(json)
+  SET,        // loc /OP/ key(index must be >=0), value(json)
+  DELETE,     // loc /OP/ key(index must be >=0)
+  PUSH,       // loc /OP/ index(>=0), values(json array)
+  UNSHIFT,    // loc /OP/ index(>=0), values(json array)
+  POP,        // loc /OP/
+  SHIFT,      // loc /OP/
+  SPLICE,     // loc /OP/ startIndex(can be negative), removeCount(>=0), insertValues(json array)
+  REVERSE,    // loc /OP/
+  REORDER,    // loc /OP/ order(json number array, at each position is that item's new index)
+  RESIZE,     // loc /OP/ length(>=0)
+  FILL,       // loc /OP/ start(>=0), end(>=0), value(json)
+  COPY_WITHIN,// loc /OP/ target(>=0), start(>=0), end(>=0)
+  FUNCTIONIZE,// loc /OP/ count(>0), ...keys(comma separated, can contain dots(.) or be an empty string, can also end with a dot serving as a shallow wildcard)
+  CALL_FUNC,  // loc /OP/ key, id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), args(json array)
+  RETURN_FUNC,// loc /OP/ id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), value(json)
+  // INSERT,     // loc /OP/ index(>=0), values(json array)
+  // REMOVE,     // loc /OP/ index(>=0), count(>=0)
+  // REPLACE,    // loc /OP/ startIndex, values(json array)
 }
 
 function popPath(loc: string): [string, string] {
@@ -74,6 +77,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           typeof data === 'object' && data !== null &&
           typeof value === 'object' && value !== null
         ) {
+          if (fullyFunctionized)
+            fullyFunctionized = false
           if (Array.isArray(data)) {
             data.splice(0, data.length, ...prepForArray(value))
           }
@@ -150,10 +155,50 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       case Operators.COPY_WITHIN:
         proxy.copyWithin(parseInt(command.slice(i1 + 1, i2)), parseInt(command.slice(i2 + 1)), parseInt(command.slice(command.indexOf(',', i2 + 1) + 1)))
         break
+      case Operators.FUNCTIONIZE: {
+        const count = parseInt(getKey())
+        const keys = command.slice(i2 + 1).split(',')
+        if (count !== keys.length)
+          throw new Error(`Functionize Operator provided keyCount didn\'t match actual received key quantity: ${count} != ${keys.length}`)
+
+        for (const key of keys) {
+          if (key.includes('.')) {
+            const [p, k1] = popPath(key);
+            (<typeof proxy>navigateProxy(p)).__functionize = k1
+          }
+          else
+            proxy.__functionize = key
+        }
+        break
+      }
+      case Operators.CALL_FUNC: {
+        const i3 = command.indexOf(',', i2 + 1)
+        const key = getKey()
+        const id = parseInt(command.slice(i2 + 1, i3))
+        const args = JSON.parse(command.slice(i3 + 1))
+        // TODO
+        break
+      }
+      case Operators.RETURN_FUNC: {
+        const id = parseInt(getKey())
+        const result = JSON.parse(command.slice(i2 + 1))
+        if (fnzIdMappings.has(id))
+          fnzIdMappings.get(id)!(result)
+        else
+          console.error('OP RETURN_FUNC\'s caller couldn\'t be found!', getLoc(), id, result)
+
+        break
+      }
+      default:
+        throw new Error(`RECEIVED INVALID OPERATOR: "${op}"`)
     }
 
     noKCP = false
   }
+
+  const fnzIdMappings: Map<number, (result: unknown) => void> = new Map()
+  const functionized: Set<string> = new Set()
+  let fullyFunctionized: boolean = false
 
   const listeners = new Map<string, (value: any) => void | null>()
 
@@ -176,10 +221,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     return index.toString()
   }
 
-  const proxy = <(Record<any, any> | any[]) & { __loc: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
+  const proxy = <(Record<any, any> | any[]) & { __loc: string, __functionize: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
     get(_, key) {
       if (key === '__loc') {
-        //TODO: optimize by only fetching parent loc, if it's an array, otherwise hard-set loc
+        //TODO: optimize by only fetching parent loc if it's an array, otherwise hard-set loc
         return getLoc()
       }
       else if (key === '__DANGER_RAW_DATA') {
@@ -203,10 +248,22 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (typeof key === 'symbol') {
         return Reflect.get(data, key)
       }
-      else if (key.includes(','))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
+      else if (key.includes(',') || key === '')
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
       else if (key.includes('.')) {
         return navigateProxy(key)
+      }
+      else if (fullyFunctionized || (functionized.size && functionized.has(key))) {
+        return function (...args: any[]) {
+          if (!fullyFunctionized && !functionized.has(key))
+            throw new Error('This property was overwritten and this function is no longer valid!')
+
+          return new Promise((resolve, reject) => {
+            const id = fnzIdMappings.size ? Math.max(...fnzIdMappings.keys()) + 1 : 0
+            fnzIdMappings.set(id, resolve)
+            sendKCP(getLoc(), Operators.CALL_FUNC, key, id, JSON.stringify(args))
+          })
+        }
       }
       else if (isArray) {
         if (/^-?[0-9]+$/.test(key)) {
@@ -437,8 +494,10 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else if (typeof key === 'symbol') {
         Reflect.set(data, key, value)
       }
-      else if (key.includes(','))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
+      else if (key.includes(',') || key === '')
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
+      else if (fullyFunctionized)
+        return false
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
         const targetProxy = navigateProxy(p1)
@@ -446,6 +505,32 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           return false
 
         Reflect.set(targetProxy, k, value) // forwards to local target proxy
+      }
+      else if (key === '__functionize') {
+        if (value === '') {
+          fullyFunctionized = true
+          functionized.clear()
+          if (isArray)
+            data.length = 0
+          else
+            for (const k in data)
+              Reflect.deleteProperty(data, k)
+
+          if (listeners.size)
+            for (const k in data)
+              handleListener(k, undefined)
+        }
+        else if (isArray)
+          throw new Error(`Arrays can only be fully functionized, per-property functionization is not supported!(${getLoc()} -> ${value})`)
+        else {
+          functionized.add(value)
+
+          if (value in data) {
+            Reflect.deleteProperty(data, value)
+            if (listeners.size)
+              handleListener(value, undefined)
+          }
+        }
       }
       else if (isArray) {
         if (key === 'length') {
@@ -487,6 +572,9 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       else {
         if (value !== undefined) {
           // no KCP for empty-objects, as they are the default behavior
+          if (functionized.size && functionized.has(key))
+            functionized.delete(key)
+
           if (
             setProp(
               key,
@@ -498,6 +586,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
               handleListener(key, value)
           }
         }
+        else if (!functionized.size || !functionized.has(key))
+          return false
         else {
           Reflect.deleteProperty(data, key)
           if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, key)
@@ -510,8 +600,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       if (typeof key === 'symbol') {
         return Reflect.deleteProperty(data, key)
       }
-      else if (key.includes(','))
-        throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
+      else if (key.includes(',') || key === '')
+        throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
       else if (key.includes('.')) {
         const [p1, k] = popPath(key)
 
@@ -548,6 +638,11 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         handleListener(key, undefined)
         return true
       }
+      else if (functionized.has(key)) {
+        functionized.delete(key)
+        if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, key)
+        return true
+      }
       else {
         return false
       }
@@ -555,8 +650,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   })
 
   function setProp(key: string, value: any): boolean {
-    if (key.includes(','))
-      throw new Error(`Key is not allowed to contain a comma ","! (${key})`)
+    if (key.includes(',') || key === '')
+      throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
     else if (key.includes('.')) {
       const [p1, k] = popPath(key)
       const targetProxy = navigateProxy(p1)
