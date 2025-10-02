@@ -32,14 +32,18 @@ export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => 
     dbs.set(dbname,
       new KcpLink<T>(
         (com) => {
-          uncompacted.add(dbname)
-          fs.appendFileSync(dbfile, `\n${com}`)
+          if (!com.startsWith('.')) {
+            uncompacted.add(dbname)
+            fs.appendFileSync(dbfile, `\n${com}`)
+          }
           subs.get(dbname)?.forEach(send => send(com))
         },
         JSON.parse(json),
         (com) => {
-          uncompacted.add(dbname)
-          fs.appendFileSync(dbfile, `\n${com}`)
+          if (!com.startsWith('.')) {
+            uncompacted.add(dbname)
+            fs.appendFileSync(dbfile, `\n${com}`)
+          }
         },
         dbname
       )
@@ -48,7 +52,7 @@ export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => 
       console.log(`loading appended kcp commands[${commands.length}] from DB "${dbname}"...`)
       const link = dbs.get(dbname)!
       for (const com of commands)
-        link.receiveKCP(com)
+        link.receiveKCP('.' + com)
 
       console.log(`all ${commands.length} commands from DB "${dbname}" were loaded!`)
 
@@ -106,15 +110,23 @@ export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Ser
 }
 
 export const webSocketHandler: Bun.WebSocketHandler<KcpLink> = {
-  open(ws: Bun.ServerWebSocket<KcpLink | { dbname: string } | undefined>): void {
+  open(ws: Bun.ServerWebSocket<KcpLink | undefined>): void {
     let dbname = 'default'
     if (ws.data !== null && typeof ws.data === 'object' && 'dbname' in ws.data && typeof ws.data.dbname === 'string') {
       dbname = ws.data.dbname
     }
 
+    ws.send = ws.send.bind(ws)
+
     ws.data = loadDB(dbname, ws.send) //TODO: potential problem if .bind(ws) is not used, but if used, must account for unloadDB parameter
 
     ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(ws.data))
+    //TODO: just temporary, doesn't work for defined FNZs deeper than root
+    const dfs = ws.data.root.__definedFnz
+    console.log('dfs:', dfs)
+    if (dfs.length)
+      ws.send('.,' + Operators.FUNCTIONIZE + ',' + dfs.length + ',' + dfs.join(','))
+
     console.log(`Socket opened with DB ${dbname}`)
   },
   message(ws: Bun.ServerWebSocket<KcpLink>, message: string | Buffer): void | Promise<void> {

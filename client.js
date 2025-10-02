@@ -1,15 +1,19 @@
-import { List, Observable, element } from "dynamics"
+import { Observable, element } from "dynamics"
 import { KcpWebSocketClient } from "./kcp"
 
-/** @type {List} */
-var serverStorage
+/** @type {any} */
+var DB
+
+var spanObs = new Observable()
+
+window.x.replaceWith(element('span', {
+  innerText: spanObs
+}))
 
 if (typeof window !== 'undefined') {
   var wsc = new KcpWebSocketClient('/kisdb')
   wsc.obs.on(root => {
-    serverStorage = root
-    window.x.replaceWith(element('span', {
-      innerText: root.name = new Observable()
-    }))
+    DB = root
+    root.name = spanObs
   })
 }

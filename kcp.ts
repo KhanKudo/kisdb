@@ -1,5 +1,6 @@
 import { Observable } from "dynamics"
 
+// NOTE: a '.' at the start means that the message doesn't contain any data for the DB, so it won't be stored in the file! (used for e.g. api-calling functions)
 export const enum Operators { // IMPORTANT: Always APPEND new operators, never insert them before or inbetween, otherwise uncompacted DBs will get corrupted
   OVERWRITE,  // loc /OP/ value(json)
   SET,        // loc /OP/ key(index must be >=0), value(json)
@@ -14,9 +15,9 @@ export const enum Operators { // IMPORTANT: Always APPEND new operators, never i
   RESIZE,     // loc /OP/ length(>=0)
   FILL,       // loc /OP/ start(>=0), end(>=0), value(json)
   COPY_WITHIN,// loc /OP/ target(>=0), start(>=0), end(>=0)
-  FUNCTIONIZE,// loc /OP/ count(>0), ...keys(comma separated, can contain dots(.) or be an empty string, can also end with a dot serving as a shallow wildcard)
-  CALL_FUNC,  // loc /OP/ key, id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), args(json array)
-  RETURN_FUNC,// loc /OP/ id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), value(json)
+  FUNCTIONIZE,//.loc /OP/ count(>0), ...keys(comma separated, can contain dots(.) or be an empty string, can also end with a dot serving as a shallow wildcard)
+  CALL_FUNC,  //.loc /OP/ key, id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), args(json array)
+  RETURN_FUNC,//.loc /OP/ id(unique across parallel calls from same proxy-object, can be reused upon resolution >=0), value(json)
   // INSERT,     // loc /OP/ index(>=0), values(json array)
   // REMOVE,     // loc /OP/ index(>=0), count(>=0)
   // REPLACE,    // loc /OP/ startIndex, values(json array)
@@ -55,6 +56,8 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   function getLoc() {
     if (parent instanceof KcpLink)
       return upperLoc
+    else if (parent.__loc === '')
+      return (typeof upperLoc === 'function' ? upperLoc(proxy) : upperLoc)
     else
       return parent.__loc + '.' + (typeof upperLoc === 'function' ? upperLoc(proxy) : upperLoc)
   }
@@ -175,15 +178,36 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         const i3 = command.indexOf(',', i2 + 1)
         const key = getKey()
         const id = parseInt(command.slice(i2 + 1, i3))
-        const args = JSON.parse(command.slice(i3 + 1))
-        // TODO
+        const args = JSON.parse(command.slice(i3 + 1)) ?? []
+
+        const func = fnzDefs.get(key)
+        if (!func) {
+          console.error(`Received KCP CALL_FUNC for "${key}" but no fnzDef exists for it!`)
+          return // keep id alive on requestor side and just don't respond.
+        }
+
+        setTimeout(async () => {
+          try {
+            const res = await func(...args)
+            sendKCP('.' + getLoc(), Operators.RETURN_FUNC, id, JSON.stringify(res))
+          }
+          catch (err) {
+            console.error(`Received KCP CALL_FUNC "${key}" failed during execution with error: ${err}`)
+            return // keep id alive on requestor side and just don't respond.
+          }
+        })
+
         break
       }
       case Operators.RETURN_FUNC: {
         const id = parseInt(getKey())
-        const result = JSON.parse(command.slice(i2 + 1))
-        if (fnzIdMappings.has(id))
-          fnzIdMappings.get(id)!(result)
+
+        const result = (command.length > i2 + 1) ? JSON.parse(command.slice(i2 + 1)) : undefined
+        if (fnzIdMappings.has(id)) {
+          const func = fnzIdMappings.get(id)
+          fnzIdMappings.delete(id)
+          func!(result)
+        }
         else
           console.error('OP RETURN_FUNC\'s caller couldn\'t be found!', getLoc(), id, result)
 
@@ -198,6 +222,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
 
   const fnzIdMappings: Map<number, (result: unknown) => void> = new Map()
   const functionized: Set<string> = new Set()
+  const fnzDefs: Map<string, (...args: any[]) => unknown | Promise<unknown>> = new Map()
   let fullyFunctionized: boolean = false
 
   const listeners = new Map<string, (value: any) => void | null>()
@@ -221,7 +246,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
     return index.toString()
   }
 
-  const proxy = <(Record<any, any> | any[]) & { __loc: string, __functionize: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
+  const proxy = <(Record<any, any> | any[]) & { __loc: string, __definedFnz: string[], __functionize: string, __receiveKCP: (command: string) => void, __kcp: string, __DANGER_RAW_DATA: (Record<any, any> | any[]), toString: () => string }>new Proxy<Record<any, any> | any[]>(data, {
     get(_, key) {
       if (key === '__loc') {
         //TODO: optimize by only fetching parent loc if it's an array, otherwise hard-set loc
@@ -232,6 +257,18 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else if (key === '__receiveKCP') {
         return receivedKCP
+      }
+      else if (key === '__definedFnz') {
+        return [
+          ...fnzDefs.keys(),
+          ...Object.entries(data)
+            .map(([k, v]) =>
+              (typeof v === 'object' && v !== null) ?
+                (v.__definedFnz as string[]).map(x => k + '.' + x) :
+                []
+            )
+            .flat()
+        ]
       }
       else if (key === 'toString') {
         if (isArray)
@@ -261,7 +298,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           return new Promise((resolve, reject) => {
             const id = fnzIdMappings.size ? Math.max(...fnzIdMappings.keys()) + 1 : 0
             fnzIdMappings.set(id, resolve)
-            sendKCP(getLoc(), Operators.CALL_FUNC, key, id, JSON.stringify(args))
+            sendKCP('.' + getLoc(), Operators.CALL_FUNC, key, id, JSON.stringify(args))
           })
         }
       }
@@ -485,17 +522,23 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
     },
     set(_, key, value): boolean {
+      console.log('set', key, value)
       if (key === '__kcp') {
         receivedKCP(value)
       }
-      else if (key === '__loc' || key === '__receiveKCP' || key === 'toString' || key === 'toJSON' || key === '__DANGER_RAW_DATA') {
+      else if (key === '__loc' || key === '__definedFnz' || key === '__receiveKCP' || key === 'toString' || key === 'toJSON' || key === '__DANGER_RAW_DATA') {
         return false
       }
       else if (typeof key === 'symbol') {
         Reflect.set(data, key, value)
       }
-      else if (key.includes(',') || key === '')
+      else if (key.includes(',') || (key === '' && typeof value !== 'function'))
         throw new Error(`Key is not allowed to be empty or contain a comma ","! (${key})`)
+      else if (typeof value === 'function') {
+        setProp(key, value)
+        if (noKCP) noKCP = false; else sendKCP('.' + getLoc(), Operators.FUNCTIONIZE, 1, key)
+        return true
+      }
       else if (fullyFunctionized)
         return false
       else if (key.includes('.')) {
@@ -640,12 +683,20 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       }
       else if (functionized.has(key)) {
         functionized.delete(key)
-        if (noKCP) noKCP = false; else sendKCP(getLoc(), Operators.DELETE, key)
+        if (noKCP) noKCP = false; else sendKCP('.' + getLoc(), Operators.DELETE, key)
+        return true
+      }
+      else if (fnzDefs.has(key)) {
+        fnzDefs.delete(key)
+        if (noKCP) noKCP = false; else sendKCP('.' + getLoc(), Operators.DELETE, key)
         return true
       }
       else {
         return false
       }
+    },
+    has(_, key) {
+      return key in data || (typeof key === 'string' && functionized.has(key))
     }
   })
 
@@ -663,6 +714,17 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
       listeners.set(key, value.set.bind(value)) // set listener function, do not emit value change event
       value.set(Reflect.get(data, key))
       return false
+    }
+    else if (typeof value === 'function') {
+      console.log(`fnz defined at "${key}"`)
+
+      if (key === '')
+        fnzDefs.clear()
+      else
+        Reflect.deleteProperty(data, key)
+
+      fnzDefs.set(key, value)
+      return true
     }
     else if (typeof value === 'object' && value !== null) {
       if ((Reflect.get(data, key) !== value) && (isArray || Array.isArray(value) || Object.keys(value).length)) {
@@ -694,11 +756,12 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   if ('' in data) {
     if (typeof data[''] !== 'function')
       throw new Error(`Object key may not be an empty string! (${getLoc()}[''])`)
-    else if (Object.keys(data).length !== 1)
+
+    if (Object.keys(data).length !== 1)
       throw new Error(`Object wildcard function specified but other keys are present too which is not allowed! (${Object.keys(data).join(',')})`)
-    else {
-      // TODO
-    }
+
+    setProp('', data[''])
+    if (noKCP) noKCP = false; else sendKCP('.' + getLoc(), Operators.FUNCTIONIZE, 1, '')
   }
   else {
     const toFnz: string[] = []
@@ -713,19 +776,17 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy))
         }
       }
-      else if (typeof v === 'function')
+      else if (typeof v === 'function') {
+        setProp(k, v)
         toFnz.push(k)
+      }
       else if (v instanceof Observable)
         setProp(k, v)
     }
 
     if (toFnz.length)
-      for (const k of toFnz) {
-
-      }
+      if (noKCP) noKCP = false; else sendKCP('.' + getLoc(), Operators.FUNCTIONIZE, toFnz.length, toFnz.join(','))
   }
-
-
 
   return proxy
 }
@@ -757,7 +818,9 @@ export class KcpLink<T = any> {
     this.kcpReceiverListener?.(command)
 
     const eiLoc = command.indexOf(',')
-    const loc = command.slice(0, eiLoc).split('.').slice(1)
+    const loc = command.slice(command.startsWith('.') ? 1 : 0, eiLoc).split('.')
+    if (loc[0] === '')
+      loc.splice(0, 1)
     let temp = this.root
 
     //@ts-ignore
