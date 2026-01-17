@@ -766,14 +766,14 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
   else {
     const toFnz: string[] = []
 
-    for (const k in data) {
+    for (const k in data) { // assumes data is object and not array
       const v = Reflect.get(data, k)
       if (typeof v === 'object' && v !== null) {
         if (Array.isArray(v)) {
-          Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), arrayUpperLocFunc, proxy))
+          Reflect.set(data, k, toKcpProxy(sendKCP, Array.from(v), getLoc() + '.' + k, proxy))
         }
         else {
-          Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), k, proxy))
+          Reflect.set(data, k, toKcpProxy(sendKCP, Object.assign({}, v), getLoc() + '.' + k, proxy))
         }
       }
       else if (typeof v === 'function') {

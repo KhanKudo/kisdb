@@ -1488,16 +1488,12 @@ class KcpWebSocketClient extends KcpLink {
 }
 
 // client.js
+var __forceLoader = element();
 var DB;
-var spanObs = new Observable;
-window.x.replaceWith(element("span", {
-  innerText: spanObs
-}));
 if (typeof window !== "undefined") {
-  wsc = new KcpWebSocketClient("/kisdb");
-  wsc.obs.on((root) => {
+  KCL = new KcpWebSocketClient("/kisdb");
+  KCL.obs.on((root) => {
     DB = root;
-    root.name = spanObs;
   });
 }
-var wsc;
+var KCL;

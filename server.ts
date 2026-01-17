@@ -101,6 +101,9 @@ export function saveDB(dbname: string) {
 }
 
 export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
+  '/kisdb.js'(req, server) {
+    return new Response(Bun.file('node_modules/@khankudo/kisdb/browser.js'))
+  },
   '/kisdb'(req, server) {
     server.upgrade(req)
   },
