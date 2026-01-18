@@ -102,6 +102,8 @@ describe('arrays', () => {
     })
   })
 
+  test.todo('more array tests with different scenarios')
+
   describe('methods', () => {
     beforeEach(() => {
       KCL = new KcpLink((com) => kcps.push(com), [8, 0, 9])
@@ -668,7 +670,62 @@ describe('arrays', () => {
     })
 
     describe.todo('copyWithin', () => {
+      // target:
+      // 0
+      // 1
+      // -1
+      // -2
+      // -10
+      // 10
+      // target > start
+      //
+      // start:
+      // 0
+      // 1
+      // -1
+      // -2
+      // -10
+      // 10
+      //
+      // end:
+      // 0
+      // 1
+      // -1
+      // -2
+      // -10
+      // 10
+      // end < start
+      // end = start
 
+      test('no args', () => {
+        //@ts-expect-error
+        DB.copyWithin()
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      // shows really odd behavior, will leave out of tests
+      // test('no start', () => {
+      //   //@ts-expect-error
+      //   DB.copyWithin(0)
+
+      //   expect(DB).toEqual([8, 0, 9])
+
+      //   expect(kcps).toHaveLength(0)
+      // })
+
+      test('1 0 2', () => {
+        DB.copyWithin(1, 0, 2)
+
+        expect(DB).toEqual([8, 8, 0])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,0,2')
+      })
+
+      test.todo('make more tests for copyWithin, once KCL doesn\'t crash')
     })
   })
 
