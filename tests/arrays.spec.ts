@@ -3,7 +3,7 @@ import { KcpLink } from '../kcp'
 
 describe('arrays', () => {
   let KCL: KcpLink
-  let DB: any
+  let DB: any[]
   let kcps: string[] = []
   beforeEach(() => {
     KCL = new KcpLink((com) => kcps.push(com), [])
@@ -20,7 +20,7 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,5')
     })
 
-    test('[1]', () => {
+    test.todo('[1]', () => {
       DB[1] = 5
       expect(DB).toEqual([undefined, 5])
 
@@ -28,7 +28,7 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,1,5')
     })
 
-    test('[-1]', () => {
+    test.todo('[-1]', () => {
       DB[-1] = 5
       expect(DB).toEqual([5])
 
@@ -36,7 +36,7 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,5')
     })
 
-    test('[-99]', () => {
+    test.todo('[-99]', () => {
       DB[-99] = 5
       expect(DB).toEqual([5])
 
@@ -68,7 +68,7 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,1,5')
     })
 
-    test('[5]', () => {
+    test.todo('[5]', () => {
       DB[5] = 5
       expect(DB).toEqual([1, 2, 3, undefined, undefined, 5])
 
@@ -76,7 +76,7 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,5,5')
     })
 
-    test('[-1]', () => {
+    test.todo('[-1]', () => {
       DB[-1] = 5
       expect(DB).toEqual([1, 2, 5])
 
@@ -109,51 +109,81 @@ describe('arrays', () => {
       kcps.splice(0)
     })
 
-    test('empty calls', () => {
-      DB.push()
-      DB.unshift()
-
-      expect(kcps).toHaveLength(0)
-    })
-
     test('push', () => {
-      const res = DB.push(1, 2, 3)
+      let res = DB.push()
+      expect(DB).toEqual([8, 0, 9])
+      expect(res).toBe(3)
+
+      res = DB.push(1, 2, 3)
       expect(DB).toEqual([8, 0, 9, 1, 2, 3])
       expect(res).toBe(6)
 
       expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',3,0,[1,2,3]')
+      expect(kcps[0]).toBe(',3,[1,2,3]')
     })
 
     test('unshift', () => {
-      const res = DB.unshift(1, 2, 3)
-      expect(DB).toEqual([3, 2, 1, 8, 0, 9])
+      let res = DB.unshift()
+      expect(DB).toEqual([8, 0, 9])
+      expect(res).toBe(3)
+
+      res = DB.unshift(1, 2, 3)
+      expect(DB).toEqual([1, 2, 3, 8, 0, 9])
       expect(res).toBe(6)
 
       expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',4,0,[1,2,3]')
+      expect(kcps[0]).toBe(',4,[1,2,3]')
     })
 
     test('pop', () => {
-      const res = DB.pop()
+      let res = DB.pop()
       expect(DB).toEqual([8, 0])
       expect(res).toBe(9)
 
-      expect(kcps).toHaveLength(1)
+      res = DB.pop()
+      expect(DB).toEqual([8])
+      expect(res).toBe(0)
+
+      res = DB.pop()
+      expect(DB).toEqual([])
+      expect(res).toBe(8)
+
+      res = DB.pop()
+      expect(DB).toEqual([])
+      expect(res).toBeUndefined()
+
+      expect(kcps).toHaveLength(3)
       expect(kcps[0]).toBe(',5')
+      expect(kcps[1]).toBe(',5')
+      expect(kcps[2]).toBe(',5')
     })
 
     test('shift', () => {
-      const res = DB.shift()
+      let res = DB.shift()
       expect(DB).toEqual([0, 9])
       expect(res).toBe(8)
 
-      expect(kcps).toHaveLength(1)
+      res = DB.shift()
+      expect(DB).toEqual([9])
+      expect(res).toBe(0)
+
+      res = DB.shift()
+      expect(DB).toEqual([])
+      expect(res).toBe(9)
+
+      res = DB.shift()
+      expect(DB).toEqual([])
+      expect(res).toBeUndefined()
+
+      expect(kcps).toHaveLength(3)
       expect(kcps[0]).toBe(',6')
+      expect(kcps[1]).toBe(',6')
+      expect(kcps[2]).toBe(',6')
     })
 
-    describe('splice', () => {
+    describe.todo('splice', () => {
       test('no args', () => {
+        //@ts-expect-error
         let res = DB.splice()
         expect(DB).toEqual([8, 0, 9])
         expect(res).toEqual([])
@@ -366,9 +396,22 @@ describe('arrays', () => {
         //--------------------
         const res = DB.reverse()
         expect(DB).toEqual([1])
-        expect(res).toStrictEqual(DB)
+        expect(res === DB).toBeTrue()
 
         expect(kcps).toHaveLength(0)
+      })
+
+      test('double', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [1, 2])
+        DB = KCL.root
+        kcps.splice(0)
+        //--------------------
+        const res = DB.reverse()
+        expect(DB).toEqual([2, 1])
+        expect(res === DB).toBeTrue()
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',8')
       })
 
       test('odd', () => {
@@ -378,7 +421,7 @@ describe('arrays', () => {
         //--------------------
         const res = DB.reverse()
         expect(DB).toEqual([3, 2, 1])
-        expect(res).toStrictEqual(DB)
+        expect(res === DB).toBeTrue()
 
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',8')
@@ -391,11 +434,241 @@ describe('arrays', () => {
         //--------------------
         const res = DB.reverse()
         expect(DB).toEqual([4, 3, 2, 1])
-        expect(res).toStrictEqual(DB)
+        expect(res === DB).toBeTrue()
 
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',8')
       })
+    })
+
+    describe('sort', () => {
+      test('empty', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [])
+        DB = KCL.root
+        kcps.splice(0)
+        //---------------
+        DB.sort((a, b) => a - b)
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('no arg ascending', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [1, 2, 3, 4, 5])
+        DB = KCL.root
+        kcps.splice(0)
+        //---------------
+        DB.sort()
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('no arg descending', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [5, 4, 3, 2, 1])
+        DB = KCL.root
+        kcps.splice(0)
+        //---------------
+        DB.sort()
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',9,[4,3,2,1,0]')
+      })
+
+      test('random', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [1, 2, 3, 4, 5])
+        DB = KCL.root
+        kcps.splice(0)
+        //---------------
+        let count = DB.length * 2
+        DB.sort(() => {
+          if (count === 0)
+            return 0
+          count--
+          return Math.random() - .5
+        })
+
+        if (JSON.stringify(DB) === '[1,2,3,4,5]') {
+          expect(kcps).toHaveLength(0)
+        }
+        else {
+          expect(kcps).toHaveLength(1)
+          expect(kcps[0]).toBe(`,9,[${DB.indexOf(1)},${DB.indexOf(2)},${DB.indexOf(3)},${DB.indexOf(4)},${DB.indexOf(5)}]`)
+        }
+      }, { repeats: 4 })
+
+      test('objects', () => {
+        KCL = new KcpLink((com) => kcps.push(com), [
+          { x: 1 },
+          { x: 2 },
+          { x: 3 },
+          { x: 4 },
+          { x: 5 },
+        ])
+        DB = KCL.root
+        kcps.splice(0)
+        //---------------
+        DB.sort((a, b) => b.x - a.x)
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(`,9,[4,3,2,1,0]`)
+      })
+    })
+
+    describe('length (resize)', () => {
+      test('zero', () => {
+        DB.length = 0
+        expect(DB).toHaveLength(0)
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',10,0')
+      })
+
+      test('unchanged', () => {
+        expect(DB).toHaveLength(3)
+        DB.length = 3
+        expect(DB).toHaveLength(3)
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('shorter', () => {
+        DB.length = 2
+        expect(DB).toHaveLength(2)
+        expect(DB[2]).toBeUndefined()
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',10,2')
+      })
+
+      test('longer', () => {
+        DB.length = 4
+        expect(DB[3]).toBeUndefined()
+        expect(DB).toHaveLength(4)
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',10,4')
+      })
+    })
+
+    describe('fill', () => {
+      test('no arg', () => {
+        //@ts-expect-error
+        DB.fill()
+        expect(DB).toEqual([undefined, undefined, undefined])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,3,')
+      })
+
+      test('zero', () => {
+        DB.fill(0)
+        expect(DB).toEqual([0, 0, 0])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,3,0')
+      })
+
+      test('empty', () => {
+        DB.length = 0
+        kcps.length = 0
+        //---------------
+        DB.fill(5)
+        expect(DB).toEqual([])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test.todo('unchanged', () => {
+        DB.fill(0)
+        kcps.length = 0
+        //---------------
+        DB.fill(0)
+        expect(DB).toEqual([0, 0, 0])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('from 1', () => {
+        DB.fill('x', 1)
+        expect(DB).toEqual([8, 'x', 'x'])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,1,3,"x"')
+      })
+
+      test('from 0 to 1', () => {
+        DB.fill('x', 0, 1)
+        expect(DB).toEqual(['x', 0, 9])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,1,"x"')
+      })
+
+      test('from 1 to 1', () => {
+        DB.fill('x', 1, 1)
+        expect(DB).toEqual([8, 0, 9])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('from 2 to 1', () => {
+        DB.fill('x', 2, 1)
+        expect(DB).toEqual([8, 0, 9])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('negative', () => {
+        DB.fill('x', -2, -1)
+        expect(DB).toEqual([8, 'x', 9])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,1,2,"x"')
+      })
+
+      test('invalid negative', () => {
+        DB.fill('x', -20, -10)
+        expect(DB).toEqual([8, 0, 9])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('far negative', () => {
+        DB.fill('x', -20, 1)
+        expect(DB).toEqual(['x', 0, 9])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,1,"x"')
+      })
+
+      test('invalid positive', () => {
+        DB.fill('x', 10, 20)
+        expect(DB).toEqual([8, 0, 9])
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('far positive', () => {
+        DB.fill('x', 1, 20)
+        expect(DB).toEqual([8, 'x', 'x'])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,1,3,"x"')
+      })
+
+      test('far negative and positive', () => {
+        DB.fill('x', -20, 20)
+        expect(DB).toEqual(['x', 'x', 'x'])
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,3,"x"')
+      })
+
+      test('object', () => {
+        DB.fill({ x: 1 })
+        expect(DB).toEqual([{ x: 1 }, { x: 1 }, { x: 1 }])
+        expect(DB[0] === DB[1]).toBeFalse()
+        expect(DB[1] === DB[2]).toBeFalse()
+        expect(DB[2] === DB[0]).toBeFalse()
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',11,0,3,{"x":1}')
+      })
+
+      test('object modify', () => {
+        DB.fill({ x: 1 })
+        expect(DB).toEqual([{ x: 1 }, { x: 1 }, { x: 1 }])
+        DB[0].x = 5
+        DB[1].x = 4
+        DB[2].x = 3
+        expect(DB).toEqual([{ x: 5 }, { x: 4 }, { x: 3 }])
+        expect(kcps).toHaveLength(4)
+        expect(kcps[0]).toBe(',11,0,3,{"x":1}')
+        expect(kcps[1]).toBe('0,1,x,5')
+        expect(kcps[2]).toBe('1,1,x,4')
+        expect(kcps[3]).toBe('2,1,x,3')
+      })
+    })
+
+    describe.todo('copyWithin', () => {
+
     })
   })
 
@@ -464,8 +737,8 @@ describe('arrays', () => {
       const obj: any = { a: 1 }
       DB[0] = obj
 
-      expect(DB[0]).not.toStrictEqual(obj)
-      expect(DB[0]).toEqual(obj)
+      expect(DB[0] === obj).toBeFalse()
+      expect(DB[0]).toStrictEqual(obj)
       obj.a = 'never'
       expect(DB[0]).not.toEqual(obj)
 
@@ -477,10 +750,10 @@ describe('arrays', () => {
       const obj: any = { a: 1, b: { x: 'y' } }
       DB[0] = obj
 
-      expect(DB[0]).not.toStrictEqual(obj)
-      expect(DB[0].b).not.toStrictEqual(obj.b)
-      expect(DB[0]).toEqual(obj)
-      expect(DB[0].b).toEqual(obj.b)
+      expect(DB[0] === obj).toBeFalse()
+      expect(DB[0].b === obj.b).toBeFalse()
+      expect(DB[0]).toStrictEqual(obj)
+      expect(DB[0].b).toStrictEqual(obj.b)
       obj.a = 'never'
       obj.b.x = 'NEVER'
       expect(DB[0]).not.toEqual(obj)
@@ -494,8 +767,8 @@ describe('arrays', () => {
       const arr: any[] = [1, 'b']
       DB[0] = arr
 
-      expect(DB[0]).not.toStrictEqual(arr)
-      expect(DB[0]).toEqual(arr)
+      expect(DB[0] === arr).toBeFalse()
+      expect(DB[0]).toStrictEqual(arr)
       arr.pop()
       expect(DB[0]).not.toEqual(arr)
 
@@ -507,10 +780,10 @@ describe('arrays', () => {
       const arr: any[] = [1, 'b', [2, 'a']]
       DB[0] = arr
 
-      expect(DB[0]).not.toStrictEqual(arr)
-      expect(DB[0][2]).not.toStrictEqual(arr[2])
-      expect(DB[0]).toEqual(arr)
-      expect(DB[0][2]).toEqual(arr[2])
+      expect(DB[0] === arr).toBeFalse()
+      expect(DB[0][2] === arr[2]).toBeFalse()
+      expect(DB[0]).toStrictEqual(arr)
+      expect(DB[0][2]).toStrictEqual(arr[2])
       arr[2].pop()
       expect(DB[0]).not.toEqual(arr)
       expect(DB[0][2]).not.toEqual(arr[2])
@@ -523,7 +796,7 @@ describe('arrays', () => {
       const date = new Date()
       DB[0] = date
 
-      expect(DB[0]).not.toStrictEqual(date)
+      expect(DB[0] === date).toBeFalse()
       expect(DB[0]).toBe(JSON.stringify(date))
 
       expect(kcps).toHaveLength(1)

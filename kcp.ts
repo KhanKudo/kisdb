@@ -5,8 +5,8 @@ export const enum Operators { // IMPORTANT: Always APPEND new operators, never i
   OVERWRITE,  // loc /OP/ value(json)
   SET,        // loc /OP/ key(index must be >=0), value(json)
   DELETE,     // loc /OP/ key(index must be >=0)
-  PUSH,       // loc /OP/ index(>=0), values(json array)
-  UNSHIFT,    // loc /OP/ index(>=0), values(json array)
+  PUSH,       // loc /OP/ values(json array)
+  UNSHIFT,    // loc /OP/ values(json array)
   POP,        // loc /OP/
   SHIFT,      // loc /OP/
   SPLICE,     // loc /OP/ startIndex(can be negative), removeCount(>=0), insertValues(json array)

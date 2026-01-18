@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach } from 'bun:test'
 import { KcpLink } from '../kcp'
 
 describe('objects', () => {
@@ -11,10 +11,12 @@ describe('objects', () => {
     kcps.splice(0)
   })
 
+  test.todo('return value of setters (and methods / special properties)')
+
   test('overwriting root', () => {
     const obj = { a: 'b' }
     KCL.root = obj
-    expect(KCL.root).not.toStrictEqual(obj)
+    expect(KCL.root === obj).toBeFalse()
     expect(KCL.root).toEqual(obj)
     expect(Object.keys(KCL.root)).toHaveLength(1)
     expect(kcps).toHaveLength(1)
@@ -25,7 +27,7 @@ describe('objects', () => {
     const obj = { a: 'b' }
     DB.c = obj
 
-    expect(DB.c).not.toStrictEqual(obj)
+    expect(DB.c === obj).toBeFalse()
     expect(DB.c).toEqual(obj)
     expect(Object.keys(DB.c)).toHaveLength(1)
 
@@ -41,7 +43,7 @@ describe('objects', () => {
 
     expect(DB.c).toEqual(objA)
     expect(DB.c).toContainKey('d')
-    expect(DB.c.d).not.toStrictEqual(objB)
+    expect(DB.c.d === objB).toBeFalse()
     expect(DB.c.d).toEqual(objB)
     expect(objA).not.toContainKey('e')
 
@@ -56,10 +58,10 @@ describe('objects', () => {
 
     DB.c = obj
 
-    expect(DB.c).not.toStrictEqual(obj)
+    expect(DB.c === obj).toBeFalse()
     expect(DB.c).toEqual(obj)
     expect(DB.c).toContainKey('d')
-    expect(DB.c.d).not.toStrictEqual(d)
+    expect(DB.c.d === d).toBeFalse()
     expect(DB.c.d).toEqual(d)
 
     expect(kcps).toHaveLength(1)
@@ -81,13 +83,13 @@ describe('objects', () => {
     DB.c = obj
     DB.c.d.d.d.d.d.d.d.d.d.d.X = 'Y'
 
-    expect(DB.c).not.toStrictEqual(obj)
-    expect(DB.c).toEqual(obj)
+    expect(DB.c === obj).toBeFalse()
+    expect(DB.c).toStrictEqual(obj)
     expect(DB.c).toContainKey('d')
-    expect(DB.c.d).not.toStrictEqual(d)
-    expect(DB.c.d).toEqual(d)
-    expect(DB.c.d.d).not.toStrictEqual(d)
-    expect(DB.c.d.d).toEqual(d)
+    expect(DB.c.d === d).toBeFalse()
+    expect(DB.c.d).toStrictEqual(d)
+    expect(DB.c.d.d === d).toBeFalse()
+    expect(DB.c.d.d).toStrictEqual(d)
     expect(DB.c.depth).toBe(0)
     expect(DB.c.d.depth).toBe(1)
     expect(DB.c.d.d.depth).toBe(2)
@@ -117,10 +119,10 @@ describe('objects', () => {
     DB.c = obj
     DB.d = DB.c
 
-    expect(DB.c).not.toStrictEqual(obj)
-    expect(DB.c).toEqual(obj)
-    expect(DB.d).not.toStrictEqual(DB.c)
-    expect(DB.d).toEqual(DB.c)
+    expect(DB.c === obj).toBeFalse()
+    expect(DB.c).toStrictEqual(obj)
+    expect(DB.d === DB.c).toBeFalse()
+    expect(DB.d).toStrictEqual(DB.c)
 
     DB.c.f = 'e'
     DB.d.e = 'f'
@@ -202,7 +204,7 @@ describe('objects', () => {
     expect(DB.a.b.c).toBe(5)
     const obj = { a: 'b' }
     DB['x.y.z'] = obj
-    expect(DB.x.y.z).not.toStrictEqual(obj)
+    expect(DB.x.y.z === obj).toBeFalse()
     expect(DB.x.y.z).toEqual(obj)
 
     expect(kcps).toHaveLength(2)
@@ -303,8 +305,8 @@ describe('objects', () => {
       const obj: any = { a: 1 }
       DB.c = obj
 
-      expect(DB.c).not.toStrictEqual(obj)
-      expect(DB.c).toEqual(obj)
+      expect(DB.c === obj).toBeFalse()
+      expect(DB.c).toStrictEqual(obj)
       obj.a = 'never'
       expect(DB.c).not.toEqual(obj)
 
@@ -316,10 +318,10 @@ describe('objects', () => {
       const obj: any = { a: 1, b: { x: 'y' } }
       DB.c = obj
 
-      expect(DB.c).not.toStrictEqual(obj)
-      expect(DB.c.b).not.toStrictEqual(obj.b)
-      expect(DB.c).toEqual(obj)
-      expect(DB.c.b).toEqual(obj.b)
+      expect(DB.c === obj).toBeFalse()
+      expect(DB.c.b === obj.b).toBeFalse()
+      expect(DB.c).toStrictEqual(obj)
+      expect(DB.c.b).toStrictEqual(obj.b)
       obj.a = 'never'
       obj.b.x = 'NEVER'
       expect(DB.c).not.toEqual(obj)
@@ -346,8 +348,8 @@ describe('objects', () => {
       const arr: any[] = [1, 'b', [2, 'a']]
       DB.c = arr
 
-      expect(DB.c).not.toStrictEqual(arr)
-      expect(DB.c[2]).not.toStrictEqual(arr[2])
+      expect(DB.c === arr).toBeFalse()
+      expect(DB.c[2] === arr[2]).toBeFalse()
       expect(DB.c).toEqual(arr)
       expect(DB.c[2]).toEqual(arr[2])
       arr[2].pop()
