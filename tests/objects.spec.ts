@@ -41,7 +41,7 @@ describe('objects', () => {
     DB.c = objA
     DB.c.d = objB
 
-    expect(DB.c).toEqual(objA)
+    expect(DB.c.a).toBe(objA.a)
     expect(DB.c).toContainKey('d')
     expect(DB.c.d === objB).toBeFalse()
     expect(DB.c.d).toEqual(objB)
@@ -68,7 +68,7 @@ describe('objects', () => {
     expect(kcps[0]).toBe(',1,c,{"d":{"a":"b"},"e":"f"}')
   })
 
-  test.todo('object with 10 nestings as value', () => {
+  test('object with 10 nestings as value', () => {
     const d = { a: 'b' }
     const obj = { e: 'f' }
     let temp: any = obj
@@ -81,25 +81,30 @@ describe('objects', () => {
     const jsonObj = JSON.stringify(obj)
 
     DB.c = obj
-    DB.c.d.d.d.d.d.d.d.d.d.d.X = 'Y'
 
     expect(DB.c === obj).toBeFalse()
-    expect(DB.c).toStrictEqual(obj)
+    expect(DB.c).toEqual(obj)
+
+    DB.c.d.d.d.d.d.d.d.d.d.d.X = 'Y'
+
     expect(DB.c).toContainKey('d')
     expect(DB.c.d === d).toBeFalse()
-    expect(DB.c.d).toStrictEqual(d)
     expect(DB.c.d.d === d).toBeFalse()
-    expect(DB.c.d.d).toStrictEqual(d)
+    expect(DB.c.d.d.d === d).toBeFalse()
+    expect(DB.c.d.a).toBe('b')
+    expect(DB.c.d.d.a).toBe('b')
+    expect(DB.c.d.d.d.a).toBe('b')
     expect(DB.c.depth).toBe(0)
     expect(DB.c.d.depth).toBe(1)
     expect(DB.c.d.d.depth).toBe(2)
+    expect(DB.c.X).toBeEmptyObject()
     expect(DB.c.d.d.d.d.d.d.d.d.d.X).toBeEmptyObject()
     expect(DB.c.d.d.d.d.d.d.d.d.d.d.d).toBeEmptyObject()
     expect(DB.c.d.d.d.d.d.d.d.d.d.d.X).toBe('Y')
 
     expect(kcps).toHaveLength(2)
     expect(kcps[0]).toBe(`,1,c,${jsonObj}`)
-    expect(kcps[1]).toBe('c.d.d.d.d.d.d.d.d.d,1,X,"Y"')
+    expect(kcps[1]).toBe('c.d.d.d.d.d.d.d.d.d.d,1,X,"Y"')
   })
 
   test('dynamic creation of nested object', () => {
@@ -114,15 +119,15 @@ describe('objects', () => {
     expect(kcps[0]).toBe('c.d.e,1,f,5')
   })
 
-  test.todo('proxied object as value', () => {
+  test('proxied object as value', () => {
     const obj = { a: 'b' }
     DB.c = obj
     DB.d = DB.c
 
     expect(DB.c === obj).toBeFalse()
-    expect(DB.c).toStrictEqual(obj)
+    expect(DB.c).toEqual(obj)
     expect(DB.d === DB.c).toBeFalse()
-    expect(DB.d).toStrictEqual(DB.c)
+    expect(DB.d).toEqual(DB.c)
 
     DB.c.f = 'e'
     DB.d.e = 'f'
@@ -136,7 +141,7 @@ describe('objects', () => {
     expect(kcps[0]).toBe(',1,c,{"a":"b"}')
     expect(kcps[1]).toBe(',1,d,{"a":"b"}')
     expect(kcps[2]).toBe('c,1,f,"e"')
-    expect(kcps[3]).toBe('c,1,e,"f"')
+    expect(kcps[3]).toBe('d,1,e,"f"')
   })
 
   test('delete operator', () => {
@@ -153,7 +158,7 @@ describe('objects', () => {
     expect(kcps[1]).toBe('c,2,e')
   })
 
-  test.todo('delete nonexisting', () => {
+  test('delete nonexisting', () => {
     delete DB.x
 
     expect(DB.x).toBeEmptyObject()
@@ -161,7 +166,7 @@ describe('objects', () => {
     expect(kcps).toHaveLength(0)
   })
 
-  test.todo('undefined on nonexisting', () => {
+  test('undefined on nonexisting', () => {
     DB.c = undefined
 
     expect(DB.c).toBeEmptyObject()
@@ -219,12 +224,11 @@ describe('objects', () => {
     expect(kcps).toHaveLength(0)
   })
 
-  test.todo('empty array as value', () => {
+  test('empty array as value', () => {
     DB.c = []
 
-    console.log(DB.c, JSON.stringify(DB))
-
-    expect(DB.c).toBeArrayOfSize(0)
+    expect(Array.isArray(DB.c)).toBeTrue()
+    expect(DB.c).toHaveLength(0)
     expect(kcps).toHaveLength(1)
     expect(kcps[0]).toBe(',1,c,[]')
   })
@@ -236,7 +240,7 @@ describe('objects', () => {
 
   test.todo('key sanitization', () => {
     // this is just an example, the are many more cases
-    expect(DB['.']).toThrow()
+    expect(() => DB['.']).toThrow()
     expect(() => DB.c = { '.': 5 }).toThrow()
   })
 
@@ -293,7 +297,7 @@ describe('objects', () => {
       expect(kcps[0]).toBe(',1,c,null')
     })
 
-    test.todo('undefined', () => {
+    test('undefined', () => {
       DB.c = undefined
 
       expect(DB.c).toBeEmptyObject()
@@ -301,12 +305,12 @@ describe('objects', () => {
       expect(kcps).toHaveLength(0)
     })
 
-    test.todo('object', () => {
+    test('object', () => {
       const obj: any = { a: 1 }
       DB.c = obj
 
       expect(DB.c === obj).toBeFalse()
-      expect(DB.c).toStrictEqual(obj)
+      expect(DB.c).toEqual(obj)
       obj.a = 'never'
       expect(DB.c).not.toEqual(obj)
 
@@ -314,14 +318,14 @@ describe('objects', () => {
       expect(kcps[0]).toBe(',1,c,{"a":1}')
     })
 
-    test.todo('nested object', () => {
+    test('nested object', () => {
       const obj: any = { a: 1, b: { x: 'y' } }
       DB.c = obj
 
       expect(DB.c === obj).toBeFalse()
       expect(DB.c.b === obj.b).toBeFalse()
-      expect(DB.c).toStrictEqual(obj)
-      expect(DB.c.b).toStrictEqual(obj.b)
+      expect(DB.c).toEqual(obj)
+      expect(DB.c.b).toEqual(obj.b)
       obj.a = 'never'
       obj.b.x = 'NEVER'
       expect(DB.c).not.toEqual(obj)
@@ -335,7 +339,7 @@ describe('objects', () => {
       const arr: any[] = [1, 'b']
       DB.c = arr
 
-      expect(DB.c).not.toStrictEqual(arr)
+      expect(DB.c === arr).toBeFalse()
       expect(DB.c).toEqual(arr)
       arr.pop()
       expect(DB.c).not.toEqual(arr)

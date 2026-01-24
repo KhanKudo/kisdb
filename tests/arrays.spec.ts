@@ -20,28 +20,73 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,5')
     })
 
-    test.todo('[1]', () => {
+    test('[1]', () => {
       DB[1] = 5
-      expect(DB).toEqual([undefined, 5])
+      console.log(DB, JSON.stringify(DB))
+      expect(DB).toEqual([null, 5])
 
       expect(kcps).toHaveLength(1)
       expect(kcps[0]).toBe(',1,1,5')
     })
 
-    test.todo('[-1]', () => {
-      DB[-1] = 5
-      expect(DB).toEqual([5])
+    test('[-1]', () => {
+      expect(() => {
+        DB[-1] = 5
+      }).toThrow()
 
-      expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',1,0,5')
+      expect(kcps).toHaveLength(0)
     })
 
-    test.todo('[-99]', () => {
-      DB[-99] = 5
-      expect(DB).toEqual([5])
+    test('[-99]', () => {
+      expect(() => {
+        DB[-99] = 5
+      }).toThrow()
 
-      expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',1,0,5')
+      expect(kcps).toHaveLength(0)
+    })
+  })
+
+  describe('get', () => {
+    beforeEach(() => {
+      KCL = new KcpLink((com) => kcps.push(com), [1, 2, 3])
+      DB = KCL.root
+      kcps.splice(0)
+    })
+
+    test('[0]', () => {
+      expect(DB[0]).toBe(1)
+
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[1]', () => {
+      expect(DB[1]).toBe(2)
+
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[5]', () => {
+      expect(DB[5]).toBeUndefined()
+
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[-1]', () => {
+      expect(DB[-1]).toBe(3)
+
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[-2]', () => {
+      expect(DB[-2]).toBe(2)
+
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[-99]', () => {
+      expect(DB[-99]).toBeUndefined()
+
+      expect(kcps).toHaveLength(0)
     })
   })
 
@@ -68,20 +113,20 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,1,5')
     })
 
-    test.todo('[5]', () => {
+    test('[5]', () => {
       DB[5] = 5
-      expect(DB).toEqual([1, 2, 3, undefined, undefined, 5])
+      expect(DB).toEqual([1, 2, 3, null, null, 5])
 
       expect(kcps).toHaveLength(1)
       expect(kcps[0]).toBe(',1,5,5')
     })
 
-    test.todo('[-1]', () => {
+    test('[-1]', () => {
       DB[-1] = 5
       expect(DB).toEqual([1, 2, 5])
 
       expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',1,0,5')
+      expect(kcps[0]).toBe(',1,2,5')
     })
 
     test('[-2]', () => {
@@ -92,17 +137,32 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,1,5')
     })
 
-    test.todo('[-99]', () => {
-      // not quite sure what the behaviour should be...
-      DB[-99] = 5
-      // expect(DB).toEqual([1, 5, 3])
+    test('[-99]', () => {
+      expect(() => {
+        DB[-99] = 5
+      }).toThrow()
 
-      // expect(kcps).toHaveLength(1)
-      // expect(kcps[0]).toBe(',1,1,5')
+      expect(kcps).toHaveLength(0)
+    })
+
+    test('[0] = undefined', () => {
+      DB[0] = undefined
+      expect(DB).toEqual([null, 2, 3])
+
+      expect(kcps).toHaveLength(1)
+      expect(kcps[0]).toBe(',1,0,null')
+    })
+
+    test('delete [1]', () => {
+      delete DB[1]
+      expect(DB).toEqual([1, null, 3])
+
+      expect(kcps).toHaveLength(1)
+      expect(kcps[0]).toBe(',2,1')
     })
   })
 
-  describe.only('nested', () => {
+  describe('nested', () => {
     test('modify single nested', () => {
       DB[0] = [1, 2, 3]
       DB[0][1] = 4
@@ -207,7 +267,7 @@ describe('arrays', () => {
       expect(kcps[2]).toBe(',6')
     })
 
-    describe.todo('splice', () => {
+    describe('splice', () => {
       test('no args', () => {
         //@ts-expect-error
         let res = DB.splice()
@@ -266,7 +326,7 @@ describe('arrays', () => {
         expect(res).toEqual([9])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,-1,1,[]')
+        expect(kcps[0]).toBe(',7,2,1,[]')
       })
 
       test('remove from -3', () => {
@@ -275,7 +335,7 @@ describe('arrays', () => {
         expect(res).toEqual([8, 0, 9])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,-3,3,[]')
+        expect(kcps[0]).toBe(',7,0,3,[]')
       })
 
       test('remove from far negative', () => {
@@ -311,7 +371,7 @@ describe('arrays', () => {
         expect(res).toEqual([0, 9])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,-2,2,[]')
+        expect(kcps[0]).toBe(',7,1,2,[]')
       })
 
       test('remove two from far negative', () => {
@@ -320,7 +380,7 @@ describe('arrays', () => {
         expect(res).toEqual([8, 0])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,1,2,[]')
+        expect(kcps[0]).toBe(',7,0,2,[]')
       })
 
       test('remove none', () => {
@@ -340,7 +400,7 @@ describe('arrays', () => {
       })
 
       test('insert none', () => {
-        let res = DB.splice(1, 0, [])
+        let res = DB.splice(1, 0)
         expect(DB).toEqual([8, 0, 9])
         expect(res).toEqual([])
 
@@ -348,25 +408,25 @@ describe('arrays', () => {
       })
 
       test('replace one', () => {
-        let res = DB.splice(1, 1, [1])
+        let res = DB.splice(1, 1, 1)
         expect(DB).toEqual([8, 1, 9])
-        expect(res).toEqual([1])
+        expect(res).toEqual([0])
 
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',7,1,1,[1]')
       })
 
       test('replace one, insert one', () => {
-        let res = DB.splice(1, 1, [1, 2])
+        let res = DB.splice(1, 1, 1, 2)
         expect(DB).toEqual([8, 1, 2, 9])
-        expect(res).toEqual([1])
+        expect(res).toEqual([0])
 
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',7,1,1,[1,2]')
       })
 
       test('insert two', () => {
-        let res = DB.splice(2, 0, [1, 2])
+        let res = DB.splice(2, 0, 1, 2)
         expect(DB).toEqual([8, 0, 1, 2, 9])
         expect(res).toEqual([])
 
@@ -375,30 +435,39 @@ describe('arrays', () => {
       })
 
       test('replace one, remove one', () => {
-        let res = DB.splice(2, 2, [1])
+        let res = DB.splice(1, 2, 1)
         expect(DB).toEqual([8, 1])
         expect(res).toEqual([0, 9])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,2,2,[1]')
+        expect(kcps[0]).toBe(',7,1,2,[1]')
       })
 
       test('insert at negative', () => {
-        let res = DB.splice(-3, 0, [1, 2])
+        let res = DB.splice(-3, 0, 1, 2)
         expect(DB).toEqual([1, 2, 8, 0, 9])
         expect(res).toEqual([])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,-3,0,[1,2]')
+        expect(kcps[0]).toBe(',7,0,0,[1,2]')
       })
 
       test('replace two at negative', () => {
-        let res = DB.splice(-3, 2, [1, 2])
+        let res = DB.splice(-3, 2, 1, 2)
         expect(DB).toEqual([1, 2, 9])
         expect(res).toEqual([8, 0])
 
         expect(kcps).toHaveLength(1)
-        expect(kcps[0]).toBe(',7,-3,2,[1,2]')
+        expect(kcps[0]).toBe(',7,0,2,[1,2]')
+      })
+
+      test('insert undefined', () => {
+        let res = DB.splice(2, 0, 1, undefined, 2)
+        expect(DB).toEqual([8, 0, 1, null, 2, 9])
+        expect(res).toEqual([])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',7,2,0,[1,null,2]')
       })
     })
 
@@ -410,7 +479,7 @@ describe('arrays', () => {
         //--------------------
         const res = DB.reverse()
         expect(DB).toEqual([])
-        expect(res).toStrictEqual(DB)
+        expect(res === DB).toBeTrue()
 
         expect(kcps).toHaveLength(0)
       })
@@ -561,7 +630,7 @@ describe('arrays', () => {
 
       test('longer', () => {
         DB.length = 4
-        expect(DB[3]).toBeUndefined()
+        expect(DB[3]).toBeNull()
         expect(DB).toHaveLength(4)
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',10,4')
@@ -572,7 +641,7 @@ describe('arrays', () => {
       test('no arg', () => {
         //@ts-expect-error
         DB.fill()
-        expect(DB).toEqual([undefined, undefined, undefined])
+        expect(DB).toEqual([null, null, null])
         expect(kcps).toHaveLength(1)
         expect(kcps[0]).toBe(',11,0,3,')
       })
@@ -593,14 +662,15 @@ describe('arrays', () => {
         expect(kcps).toHaveLength(0)
       })
 
-      test.todo('unchanged', () => {
-        DB.fill(0)
-        kcps.length = 0
-        //---------------
-        DB.fill(0)
-        expect(DB).toEqual([0, 0, 0])
-        expect(kcps).toHaveLength(0)
-      })
+      // network optimization would hurt all performance much more
+      // test.todo('unchanged', () => {
+      //   DB.fill(0)
+      //   kcps.length = 0
+      //   //---------------
+      //   DB.fill(0)
+      //   expect(DB).toEqual([0, 0, 0])
+      //   expect(kcps).toHaveLength(0)
+      // })
 
       test('from 1', () => {
         DB.fill('x', 1)
@@ -806,20 +876,21 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,null')
     })
 
-    test.todo('undefined', () => {
+    test('undefined', () => {
       DB[0] = undefined
 
-      expect(DB[0]).toBeEmptyObject()
+      expect(DB[0]).toBeNull()
 
-      expect(kcps).toHaveLength(0)
+      expect(kcps).toHaveLength(1)
+      expect(kcps[0]).toBe(',1,0,null')
     })
 
-    test.todo('object', () => {
+    test('object', () => {
       const obj: any = { a: 1 }
       DB[0] = obj
 
       expect(DB[0] === obj).toBeFalse()
-      expect(DB[0]).toStrictEqual(obj)
+      expect(DB[0]).toEqual(obj)
       obj.a = 'never'
       expect(DB[0]).not.toEqual(obj)
 
@@ -827,14 +898,14 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,{"a":1}')
     })
 
-    test.todo('nested object', () => {
+    test('nested object', () => {
       const obj: any = { a: 1, b: { x: 'y' } }
       DB[0] = obj
 
       expect(DB[0] === obj).toBeFalse()
       expect(DB[0].b === obj.b).toBeFalse()
-      expect(DB[0]).toStrictEqual(obj)
-      expect(DB[0].b).toStrictEqual(obj.b)
+      expect(DB[0]).toEqual(obj)
+      expect(DB[0].b).toEqual(obj.b)
       obj.a = 'never'
       obj.b.x = 'NEVER'
       expect(DB[0]).not.toEqual(obj)
@@ -844,12 +915,12 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,{"a":1,"b":{"x":"y"}}')
     })
 
-    test.todo('array', () => {
+    test('array', () => {
       const arr: any[] = [1, 'b']
       DB[0] = arr
 
       expect(DB[0] === arr).toBeFalse()
-      expect(DB[0]).toStrictEqual(arr)
+      expect(DB[0]).toEqual(arr)
       arr.pop()
       expect(DB[0]).not.toEqual(arr)
 
@@ -857,14 +928,14 @@ describe('arrays', () => {
       expect(kcps[0]).toBe(',1,0,[1,"b"]')
     })
 
-    test.todo('nested array', () => {
+    test('nested array', () => {
       const arr: any[] = [1, 'b', [2, 'a']]
       DB[0] = arr
 
       expect(DB[0] === arr).toBeFalse()
       expect(DB[0][2] === arr[2]).toBeFalse()
-      expect(DB[0]).toStrictEqual(arr)
-      expect(DB[0][2]).toStrictEqual(arr[2])
+      expect(DB[0]).toEqual(arr)
+      expect(DB[0][2]).toEqual(arr[2])
       arr[2].pop()
       expect(DB[0]).not.toEqual(arr)
       expect(DB[0][2]).not.toEqual(arr[2])
