@@ -3,7 +3,7 @@ import { KcpLink } from '../kcp'
 
 describe.todo('edge cases', () => {
   let KCL: KcpLink
-  let kcps: string[] = []
+  const kcps: string[] = []
   beforeEach(() => {
     KCL = new KcpLink((com) => kcps.push(com), {})
     kcps.splice(0)

@@ -4,7 +4,7 @@ import { KcpLink } from '../kcp'
 describe('objects', () => {
   let KCL: KcpLink
   let DB: any
-  let kcps: string[] = []
+  const kcps: string[] = []
   beforeEach(() => {
     KCL = new KcpLink((com) => kcps.push(com), {})
     DB = KCL.root

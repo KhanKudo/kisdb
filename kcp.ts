@@ -824,7 +824,7 @@ export class KcpLink<T = any> {
     let temp = this.root
 
     //@ts-ignore
-    console.log(`receivedKCP > loc:"${loc}", command:"${command}", op:"${Operators[parseInt(command.slice(eiLoc + 1, command.indexOf(',', eiLoc + 1)))]}"`)
+    // console.log(`receivedKCP > loc:"${loc}", command:"${command}", op:"${Operators[parseInt(command.slice(eiLoc + 1, command.indexOf(',', eiLoc + 1)))]}"`)
 
     if (typeof temp === 'object' && temp !== null) {
       for (const part of loc)
@@ -870,11 +870,20 @@ export class KcpWebSocketClient<T = any> extends KcpLink<T> {
 
   constructor(webSocketPath: string = '/kisdb') {
     if (webSocketPath.startsWith('/kisdb/'))
-      super((com) => this.ws.send(com), undefined, undefined, webSocketPath.slice(webSocketPath.indexOf('/', 1) + 1))
+      super((com) => {
+        console.log(`client > sendKCP > "${com}"`)
+        this.ws.send(com)
+      }, undefined, undefined, webSocketPath.slice(webSocketPath.indexOf('/', 1) + 1))
     else
-      super((com) => this.ws.send(com))
+      super((com) => {
+        console.log(`client > sendKCP > "${com}"`)
+        this.ws.send(com)
+      })
     this.ws = new WebSocket(webSocketPath)
-    this.ws.onmessage = ({ data: msg }) => { super.receiveKCP(msg) }
+    this.ws.onmessage = ({ data: msg }) => {
+      console.log(`client > receiveKCP > "${msg}"`)
+      super.receiveKCP(msg)
+    }
   }
 
   close() {

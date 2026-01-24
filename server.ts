@@ -32,6 +32,7 @@ export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => 
     dbs.set(dbname,
       new KcpLink<T>(
         (com) => {
+          console.log(`server[${dbname}] > sendKCP > "${com}"`)
           if (!com.startsWith('.')) {
             uncompacted.add(dbname)
             fs.appendFileSync(dbfile, `\n${com}`)
@@ -40,6 +41,7 @@ export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => 
         },
         JSON.parse(json),
         (com) => {
+          console.log(`server[${dbname}] > receiveKCP > "${com}"`)
           if (!com.startsWith('.')) {
             uncompacted.add(dbname)
             fs.appendFileSync(dbfile, `\n${com}`)
@@ -102,7 +104,7 @@ export function saveDB(dbname: string) {
 
 export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
   '/kisdb.js'(req, server) {
-    return new Response(Bun.file('node_modules/@khankudo/kisdb/browser.js'))
+    return new Response(Bun.file(import.meta.dir + '/browser.js'))
   },
   '/kisdb'(req, server) {
     server.upgrade(req)

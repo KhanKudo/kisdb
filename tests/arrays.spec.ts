@@ -4,14 +4,14 @@ import { KcpLink } from '../kcp'
 describe('arrays', () => {
   let KCL: KcpLink
   let DB: any[]
-  let kcps: string[] = []
+  const kcps: string[] = []
   beforeEach(() => {
     KCL = new KcpLink((com) => kcps.push(com), [])
     DB = KCL.root
     kcps.splice(0)
   })
 
-  describe('set [...]', () => {
+  describe('set on empty', () => {
     test('[0]', () => {
       DB[0] = 5
       expect(DB).toEqual([5])
@@ -45,7 +45,7 @@ describe('arrays', () => {
     })
   })
 
-  describe('set [...] with values', () => {
+  describe('set', () => {
     beforeEach(() => {
       KCL = new KcpLink((com) => kcps.push(com), [1, 2, 3])
       DB = KCL.root
@@ -99,6 +99,30 @@ describe('arrays', () => {
 
       // expect(kcps).toHaveLength(1)
       // expect(kcps[0]).toBe(',1,1,5')
+    })
+  })
+
+  describe.only('nested', () => {
+    test('modify single nested', () => {
+      DB[0] = [1, 2, 3]
+      DB[0][1] = 4
+
+      expect(DB).toEqual([[1, 4, 3]])
+
+      expect(kcps).toHaveLength(2)
+      expect(kcps[0]).toBe(',1,0,[1,2,3]')
+      expect(kcps[1]).toBe('0,1,1,4')
+    })
+
+    test('modify double nested', () => {
+      DB[0] = [[1, 2, 3]]
+      DB[0][0][1] = 4
+
+      expect(DB).toEqual([[[1, 4, 3]]])
+
+      expect(kcps).toHaveLength(2)
+      expect(kcps[0]).toBe(',1,0,[[1,2,3]]')
+      expect(kcps[1]).toBe('0.0,1,1,4')
     })
   })
 

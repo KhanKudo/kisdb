@@ -6,8 +6,8 @@ describe('functions', () => {
   let db: any
   let KCL: KcpLink
   let DB: any
-  let kcps: string[] = []
-  let KCPS: string[] = []
+  const kcps: string[] = []
+  const KCPS: string[] = []
   beforeEach(() => {
     KCL = new KcpLink((com) => { KCPS.push(com); kcl.receiveKCP(com) }, {})
     DB = KCL.root
