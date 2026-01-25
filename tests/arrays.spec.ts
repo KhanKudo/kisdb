@@ -32,7 +32,7 @@ describe('arrays', () => {
     test('[-1]', () => {
       expect(() => {
         DB[-1] = 5
-      }).toThrow()
+      }).toThrow(RangeError)
 
       expect(kcps).toHaveLength(0)
     })
@@ -40,7 +40,7 @@ describe('arrays', () => {
     test('[-99]', () => {
       expect(() => {
         DB[-99] = 5
-      }).toThrow()
+      }).toThrow(RangeError)
 
       expect(kcps).toHaveLength(0)
     })
@@ -140,7 +140,7 @@ describe('arrays', () => {
     test('[-99]', () => {
       expect(() => {
         DB[-99] = 5
-      }).toThrow()
+      }).toThrow(RangeError)
 
       expect(kcps).toHaveLength(0)
     })
@@ -763,34 +763,7 @@ describe('arrays', () => {
       })
     })
 
-    describe.todo('copyWithin', () => {
-      // target:
-      // 0
-      // 1
-      // -1
-      // -2
-      // -10
-      // 10
-      // target > start
-      //
-      // start:
-      // 0
-      // 1
-      // -1
-      // -2
-      // -10
-      // 10
-      //
-      // end:
-      // 0
-      // 1
-      // -1
-      // -2
-      // -10
-      // 10
-      // end < start
-      // end = start
-
+    describe('copyWithin', () => {
       test('no args', () => {
         //@ts-expect-error
         DB.copyWithin()
@@ -800,15 +773,42 @@ describe('arrays', () => {
         expect(kcps).toHaveLength(0)
       })
 
-      // shows really odd behavior, will leave out of tests
-      // test('no start', () => {
-      //   //@ts-expect-error
-      //   DB.copyWithin(0)
+      test('no start', () => {
+        //@ts-expect-error
+        DB.copyWithin(0)
 
-      //   expect(DB).toEqual([8, 0, 9])
+        expect(DB).toEqual([8, 0, 9])
 
-      //   expect(kcps).toHaveLength(0)
-      // })
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('shift all by 1', () => {
+        //@ts-expect-error
+        DB.copyWithin(1)
+
+        expect(DB).toEqual([8, 8, 0])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,0,2')
+      })
+
+      test('shift all by 2', () => {
+        //@ts-expect-error
+        DB.copyWithin(2)
+
+        expect(DB).toEqual([8, 0, 8])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,2,0,1')
+      })
+
+      test('0 0 2', () => {
+        DB.copyWithin(0, 0, 2)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
 
       test('1 0 2', () => {
         DB.copyWithin(1, 0, 2)
@@ -819,7 +819,159 @@ describe('arrays', () => {
         expect(kcps[0]).toBe(',12,1,0,2')
       })
 
-      test.todo('make more tests for copyWithin, once KCL doesn\'t crash')
+      test('-1 0 2', () => {
+        DB.copyWithin(-1, 0, 2)
+
+        expect(DB).toEqual([8, 0, 8])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,2,0,1')
+      })
+
+      test('-2 0 2', () => {
+        DB.copyWithin(-2, 0, 2)
+
+        expect(DB).toEqual([8, 8, 0])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,0,2')
+      })
+
+      test('-10 0 2', () => {
+        DB.copyWithin(-10, 0, 2)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('-2 1 2', () => {
+        DB.copyWithin(-2, 1, 2)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('-10 1 3', () => {
+        DB.copyWithin(-10, 1, 3)
+
+        expect(DB).toEqual([0, 9, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,0,1,3')
+      })
+
+      test('0 1 3', () => {
+        DB.copyWithin(0, 1, 3)
+
+        expect(DB).toEqual([0, 9, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,0,1,3')
+      })
+
+      test('0 2 3', () => {
+        DB.copyWithin(0, 2, 3)
+
+        expect(DB).toEqual([9, 0, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,0,2,3')
+      })
+
+      test('1 -1 2', () => {
+        DB.copyWithin(0, -1, 2)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('1 -1 3', () => {
+        DB.copyWithin(1, -1, 3)
+
+        expect(DB).toEqual([8, 9, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,2,3')
+      })
+
+      test('2 -2 3', () => {
+        DB.copyWithin(2, -2, 3)
+
+        expect(DB).toEqual([8, 0, 0])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,2,1,2')
+      })
+
+      test('1 -10 3', () => {
+        DB.copyWithin(1, -10, 3)
+
+        expect(DB).toEqual([8, 8, 0])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,0,2')
+      })
+
+      test('1 10 3', () => {
+        DB.copyWithin(1, 10, 3)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('1 10 30', () => {
+        DB.copyWithin(1, 10, 30)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('1 2 2', () => {
+        DB.copyWithin(1, 2, 2)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('0 1 -1', () => {
+        DB.copyWithin(0, 1, -1)
+
+        expect(DB).toEqual([0, 0, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,0,1,2')
+      })
+
+      test('1 0 -2', () => {
+        DB.copyWithin(1, 0, -2)
+
+        expect(DB).toEqual([8, 8, 9])
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',12,1,0,1')
+      })
+
+      test('1 -20 -10', () => {
+        DB.copyWithin(1, -20, -10)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
+
+      test('1 -10 -20', () => {
+        DB.copyWithin(1, -10, -20)
+
+        expect(DB).toEqual([8, 0, 9])
+
+        expect(kcps).toHaveLength(0)
+      })
     })
   })
 

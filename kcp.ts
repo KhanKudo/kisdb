@@ -489,15 +489,15 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           }
         }
         else if (key === 'copyWithin') {
-          return (target: number, start: number, end: number = data.length) => {
+          return (target: number = 0, start: number = 0, end: number = data.length) => {
             if (!Number.isSafeInteger(target))
-              throw new Error('Provided target index is not an integer: ' + start.toString())
+              throw new Error(`Provided target index is not an integer: ${target}`)
 
             if (!Number.isSafeInteger(start))
-              throw new Error('Provided start index is not an integer: ' + start.toString())
+              throw new Error(`Provided start index is not an integer: ${start}`)
 
             if (!Number.isSafeInteger(end))
-              throw new Error('Provided end index is not an integer: ' + end.toString())
+              throw new Error(`Provided end index is not an integer: ${end}`)
 
             if (target >= data.length || start >= data.length)
               return proxy
@@ -509,7 +509,17 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
             if (ti === si || si >= ei)
               return proxy
 
-            for (let i = si; i < ei; i++) {
+            for (
+              let i = (ti < si) ?
+                si :
+                ei - 1;
+              (ti < si) ?
+                i < ei :
+                i >= si;
+              (ti < si) ?
+                i++ :
+                i--
+            ) {
               data[ti - si + i] = (typeof data[i] === 'object' && data[i] !== null) ?
                 toKcpProxy(sendKCP, derefObject(data[i]), arrayUpperLocFunc, proxy) :
                 data[i]
@@ -618,7 +628,7 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           const oldLen = data.length
 
           if (index < 0)
-            return false
+            throw new RangeError('Provided index was too negative (out of bounds)')
           else if (setProp(index.toString(), value)) {
             if (index > oldLen)
               data.fill(null, oldLen, index)
