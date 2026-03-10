@@ -19,25 +19,25 @@ const link = loadDB(dbname, dbFunc, 'manual')
 
 const DB = link.root
 
-DB.apple = (...args: any[]) => {
-  console.log('called with:', ...args)
-  return 'banana'
-}
+// DB.apple = (...args: any[]) => {
+//   console.log('called with:', ...args)
+//   return 'banana'
+// }
 
-DB.skype = (msg: string) => {
-  console.log('\t>\tSkype Message:\t', msg)
-  DB.name = msg
-}
+// DB.skype = (msg: string) => {
+//   console.log('\t>\tSkype Message:\t', msg)
+//   DB.name = msg
+// }
 
-DB.saveDB = () => {
-  saveDB(dbname)
-}
+// DB.saveDB = () => {
+//   saveDB(dbname)
+// }
 
-setInterval(() => {
-  if ('yogurth' in DB && typeof DB.yogurth === 'function') {
-    DB.yogurth('orange')
-  }
-}, 3000)
+// setInterval(() => {
+//   if ('yogurth' in DB && typeof DB.yogurth === 'function') {
+//     DB.yogurth('orange')
+//   }
+// }, 3000)
 
 process.on('exit', () => {
   server.stop(true)

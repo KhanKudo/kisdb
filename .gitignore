@@ -2,6 +2,7 @@
 node_modules
 
 *.kisdb.json
+*.db
 
 # output
 out
