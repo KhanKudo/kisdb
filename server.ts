@@ -25,6 +25,8 @@ export function loadDB<T = any>(dbname: string, kcpSender: (command: string) => 
     if (indexNL !== -1) {
       json = file.slice(0, indexNL)
       commands = file.slice(indexNL + 1).split('\n')
+      if (commands.at(-1) === '')
+        commands.pop()
     }
     else
       json = file
@@ -106,6 +108,14 @@ export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Ser
   '/kisdb.js'(req, server) {
     return new Response(Bun.file(import.meta.dir + '/browser.js'))
   },
+  '/kisdb.js/:dbname'(req, server) {
+    return new Response(
+      fs.readFileSync(import.meta.dir + '/browser.js').toString().replace('var __forceLoader = element();\n__forceLoader = KcpWebSocketClient();', `
+var DB;
+var KCL = new KcpWebSocketClient('/kisdb/${encodeURIComponent((req.params as any).dbname)}');
+KCL.obs.on(root => {DB = root})
+      `), { headers: { "Content-Type": 'text/javascript' } })
+  },
   '/kisdb'(req, server) {
     server.upgrade(req)
   },
@@ -124,6 +134,8 @@ export const webSocketHandler: Bun.WebSocketHandler<KcpLink> = {
     ws.send = ws.send.bind(ws)
 
     ws.data = loadDB(dbname, ws.send) //TODO: potential problem if .bind(ws) is not used, but if used, must account for unloadDB parameter
+
+      ; (<any>ws.data).pinger = setInterval(() => ws.send('PING'), 29000)
 
     ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(ws.data))
     //TODO: just temporary, doesn't work for defined FNZs deeper than root
@@ -146,6 +158,7 @@ export const webSocketHandler: Bun.WebSocketHandler<KcpLink> = {
     ws.data.receiveKCP(message)
   },
   close(ws: Bun.ServerWebSocket<KcpLink>, code: number, reason: string): void | Promise<void> {
+    clearInterval((<any>ws.data).pinger)
     unloadDB(ws.data.dbname, ws.send)
   }
 }

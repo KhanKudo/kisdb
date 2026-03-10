@@ -195,17 +195,102 @@ describe('arrays', () => {
       kcps.splice(0)
     })
 
-    test('push', () => {
-      let res = DB.push()
-      expect(DB).toEqual([8, 0, 9])
-      expect(res).toBe(3)
+    describe('push', () => {
+      test('empty', () => {
+        let res = DB.push()
+        expect(DB).toEqual([8, 0, 9])
+        expect(res).toBe(3)
 
-      res = DB.push(1, 2, 3)
-      expect(DB).toEqual([8, 0, 9, 1, 2, 3])
-      expect(res).toBe(6)
+        expect(kcps).toHaveLength(0)
+      })
 
-      expect(kcps).toHaveLength(1)
-      expect(kcps[0]).toBe(',3,[1,2,3]')
+      test('numbers', () => {
+        let res = DB.push(1, 2, 3)
+        expect(DB).toEqual([8, 0, 9, 1, 2, 3])
+        expect(res).toBe(6)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[1,2,3]')
+      })
+
+      test('object', () => {
+        const obj = { a: 1 }
+        let res = DB.push(obj)
+        obj.a = 2
+        expect(DB).toEqual([8, 0, 9, { a: 1 }])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[{"a":1}]')
+      })
+
+      test('nested object', () => {
+        const obj = { a: 1, b: { c: 3 } }
+        let res = DB.push(obj)
+        obj.a = 2
+        obj.b.c = 4
+        expect(DB).toEqual([8, 0, 9, { a: 1, b: { c: 3 } }])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[{"a":1,"b":{"c":3}}]')
+      })
+
+      test('array', () => {
+        const arr = [1, 2]
+        let res = DB.push(arr)
+        arr.push(3)
+        expect(DB).toEqual([8, 0, 9, [1, 2]])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[[1,2]]')
+      })
+
+      test('nested array', () => {
+        const arr = [1, [2, 3]]
+        let res = DB.push(arr)
+        arr.push(4);
+        (<any>arr[1]).push(5)
+        expect(DB).toEqual([8, 0, 9, [1, [2, 3]]])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[[1,[2,3]]]')
+      })
+
+      test('array with object', () => {
+        const arr = [1, { a: 1 }]
+        let res = DB.push(arr);
+        (<any>arr[1]).a = 2
+        expect(DB).toEqual([8, 0, 9, [1, { a: 1 }]])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[[1,{"a":1}]]')
+      })
+
+      test('object with array', () => {
+        const obj = { a: 1, b: [2, 3] }
+        let res = DB.push(obj)
+        obj.b.push(4)
+        expect(DB).toEqual([8, 0, 9, { a: 1, b: [2, 3] }])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[{"a":1,"b":[2,3]}]')
+      })
+
+      test.only('object with empty array', () => {
+        const obj = { a: 1, b: <number[]>[] }
+        let res = DB.push(obj)
+        obj.b.push(2)
+        expect(DB).toEqual([8, 0, 9, { a: 1, b: [] }])
+        expect(res).toBe(4)
+
+        expect(kcps).toHaveLength(1)
+        expect(kcps[0]).toBe(',3,[{"a":1,"b":[]}]')
+      })
     })
 
     test('unshift', () => {

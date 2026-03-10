@@ -68,7 +68,7 @@ describe('objects', () => {
     expect(kcps[0]).toBe(',1,c,{"d":{"a":"b"},"e":"f"}')
   })
 
-  test('object with 10 nestings as value', () => {
+  test.todo('object with 10 nestings as value', () => {
     const d = { a: 'b' }
     const obj = { e: 'f' }
     let temp: any = obj
@@ -97,9 +97,9 @@ describe('objects', () => {
     expect(DB.c.depth).toBe(0)
     expect(DB.c.d.depth).toBe(1)
     expect(DB.c.d.d.depth).toBe(2)
-    expect(DB.c.X).toBeEmptyObject()
-    expect(DB.c.d.d.d.d.d.d.d.d.d.X).toBeEmptyObject()
-    expect(DB.c.d.d.d.d.d.d.d.d.d.d.d).toBeEmptyObject()
+    expect(DB.c.X).toBeUndefined()
+    expect(DB.c.d.d.d.d.d.d.d.d.d.X).toBeUndefined()
+    expect(DB.c.d.d.d.d.d.d.d.d.d.d.d).toBeUndefined()
     expect(DB.c.d.d.d.d.d.d.d.d.d.d.X).toBe('Y')
 
     expect(kcps).toHaveLength(2)
@@ -107,11 +107,11 @@ describe('objects', () => {
     expect(kcps[1]).toBe('c.d.d.d.d.d.d.d.d.d.d,1,X,"Y"')
   })
 
-  test('dynamic creation of nested object', () => {
+  test.todo('dynamic creation of nested object', () => {
     DB.c.d.e.f = 5
 
     expect(DB.c.d.e.f).toBe(5)
-    expect(DB.c.d.e.x).toBeEmptyObject()
+    expect(DB.c.d.e.x).toBeUndefined()
     expect(DB.c.d.e.f.x).toBeUndefined()
     expect(DB.c.d.e.f.toFixed).toBeFunction()
 
@@ -134,8 +134,8 @@ describe('objects', () => {
 
     expect(DB.c.f).toBe('e')
     expect(DB.d.e).toBe('f')
-    expect(DB.c.e).toBeEmptyObject()
-    expect(DB.d.f).toBeEmptyObject()
+    expect(DB.c.e).toBeUndefined()
+    expect(DB.d.f).toBeUndefined()
 
     expect(kcps).toHaveLength(4)
     expect(kcps[0]).toBe(',1,c,{"a":"b"}')
@@ -151,7 +151,7 @@ describe('objects', () => {
     delete DB.c.e
 
     expect(DB.c.a).toBe('b')
-    expect(DB.c.e).toBeEmptyObject()
+    expect(DB.c.e).toBeUndefined()
 
     expect(kcps).toHaveLength(2)
     expect(kcps[0]).toBe(',1,c,{"a":"b","e":"f"}')
@@ -161,7 +161,7 @@ describe('objects', () => {
   test('delete nonexisting', () => {
     delete DB.x
 
-    expect(DB.x).toBeEmptyObject()
+    expect(DB.x).toBeUndefined()
 
     expect(kcps).toHaveLength(0)
   })
@@ -169,7 +169,7 @@ describe('objects', () => {
   test('undefined on nonexisting', () => {
     DB.c = undefined
 
-    expect(DB.c).toBeEmptyObject()
+    expect(DB.c).toBeUndefined()
 
     expect(kcps).toHaveLength(0)
   })
@@ -196,15 +196,15 @@ describe('objects', () => {
     expect(kcps[1]).toBe(',1,c,{"a":"b"}')
   })
 
-  test('nested string key read', () => {
-    expect(DB['a.b.c']).toBeEmptyObject()
+  test.todo('nested string key read', () => {
+    expect(DB['a.b.c']).toBeUndefined()
     DB.a.b.c = 5
     expect(DB['a.b.c']).toBe(5)
     expect(kcps).toHaveLength(1)
     expect(kcps[0]).toBe('a.b,1,c,5')
   })
 
-  test('nested string key write', () => {
+  test.todo('nested string key write', () => {
     DB['a.b.c'] = 5
     expect(DB.a.b.c).toBe(5)
     const obj = { a: 'b' }
@@ -220,7 +220,7 @@ describe('objects', () => {
   test('empty object as value', () => {
     DB.c = {}
 
-    expect(DB.c).toBeEmptyObject()
+    expect(DB.c).toBeUndefined()
     expect(kcps).toHaveLength(0)
   })
 
@@ -233,8 +233,19 @@ describe('objects', () => {
     expect(kcps[0]).toBe(',1,c,[]')
   })
 
+  test('object with empty array as value', () => {
+    DB.c = {
+      d: []
+    }
+
+    expect(Array.isArray(DB.c.d)).toBeTrue()
+    expect(DB.c.d).toHaveLength(0)
+    expect(kcps).toHaveLength(1)
+    expect(kcps[0]).toBe(',1,c,{"d":[]}')
+  })
+
   test('number as key', () => {
-    expect(DB[0]).toBeEmptyObject()
+    expect(DB[0]).toBeUndefined()
     expect(kcps).toHaveLength(0)
   })
 
@@ -300,7 +311,7 @@ describe('objects', () => {
     test('undefined', () => {
       DB.c = undefined
 
-      expect(DB.c).toBeEmptyObject()
+      expect(DB.c).toBeUndefined()
 
       expect(kcps).toHaveLength(0)
     })
@@ -378,7 +389,7 @@ describe('objects', () => {
     test.todo('constructor (Number)', () => {
       DB.c = Number
 
-      expect(DB.c).toBeEmptyObject()
+      expect(DB.c).toBeUndefined()
 
       expect(kcps).toHaveLength(0)
     })
@@ -387,7 +398,7 @@ describe('objects', () => {
       const sym = Symbol()
       DB.c = sym
 
-      expect(DB.c).toBeEmptyObject()
+      expect(DB.c).toBeUndefined()
 
       expect(kcps).toHaveLength(0)
     })

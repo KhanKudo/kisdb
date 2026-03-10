@@ -286,13 +286,13 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
         if (isArray)
           return () => data.toString()
         else
-          return () => JSON.stringify(data, (key, value) => (typeof value === 'object' && value !== null && !Object.keys(value).length) ? undefined : value)
+          return () => JSON.stringify(data, (key, value) => (typeof value === 'object' && value !== null && !Object.keys(value).length && !Array.isArray(value)) ? undefined : value)
       }
       else if (key === 'toJSON') {
         if (isArray)
           return () => Array.from(data)
         else
-          return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === 'object' && v !== null && !Object.keys(v).length)))
+          return () => Object.fromEntries(Object.entries(data).filter(([k, v]) => !(typeof v === 'object' && v !== null && !Object.keys(v).length && !Array.isArray(v))))
       }
       else if (typeof key === 'symbol') {
         return Reflect.get(data, key)
@@ -538,14 +538,16 @@ function toKcpProxy(sendKCP: KcpLink['sendKCP'], data: Record<any, any> | any[] 
           return Reflect.get(data, key)
         }
       }
-      else if (Reflect.has(data, key)) {
+      else
         return Reflect.get(data, key)
-      }
-      else {
-        // Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}, part, temp as any))
-        Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy))
-        return data[key]
-      }
+      // else if (Reflect.has(data, key)) {
+      //   return Reflect.get(data, key)
+      // }
+      // else {
+      //   // Reflect.set(temp, part, toKcpProxy(sendKCP, /^[0-9]+$/.test(parts[index + 1] ?? '') ? [] : {}, part, temp as any))
+      //   Reflect.set(data, key, toKcpProxy(sendKCP, {}, key, proxy))
+      //   return data[key]
+      // }
     },
     set(_, key, value): boolean {
       console.log('set', key, value)
@@ -902,6 +904,9 @@ export class KcpWebSocketClient<T = any> extends KcpLink<T> {
       })
     this.ws = new WebSocket(webSocketPath)
     this.ws.onmessage = ({ data: msg }) => {
+      if (msg === 'PING')
+        return
+
       console.log(`client > receiveKCP > "${msg}"`)
       super.receiveKCP(msg)
     }
