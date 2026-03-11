@@ -1,33 +1,91 @@
-// function derefObject<T extends (Record<any, any> | any[])>(obj: T): T {
-//   return Array.isArray(obj) ? <T>Array.from(obj) : Object.assign({}, obj)
-// }
+export type ProxyType<T = void, K extends any[] | Record<string, any> = Record<string, any>> = (() => Promise<T>) & K
 
-export type ProxyType<T = void, K extends Record<string, any> = Record<string, any>> = (() => Promise<T>) & K
+export type DataType = string | number | boolean | null | { [key: string]: DataType } | DataType[]
+
+export interface KCPHandle {
+  getter(key: string): (DataType | void) | Promise<DataType | void>
+  setter(key: string, value?: DataType): void | Promise<void>
+  path?: string
+}
+
+export function isBadKey(key: string): boolean {
+  return /[$%]|(?:\.(?:then|finally|catch|toString|toJSON)(?:\.|$))/.test(key)
+}
 
 export const proxyRefs = new Map<string, ProxyType>()
 
-export function toKcpProxy(path: string, getter: (key: string) => Promise<any>, setter: (key: string, value?: any | null) => Promise<void>): ProxyType {
+export function toKcpProxy({ path = '', getter, setter }: KCPHandle): ProxyType {
   if (proxyRefs.has(path))
     return proxyRefs.get(path)!
 
-  const func = function () {
-    console.log(`func called at path "${path}"!`)
-    return getter(path)
+  const func = function (...args: any[]) {
+    console.log(`func called at path "${path}" with:`, ...args, ';')
+    if (args.length === 0)
+      return getter(path)
+    else if (args.length === 1)
+      return setter(path, args[0])
+    else
+      throw new Error('multiple arguments are not yet supported!')
   }
 
   const toPath = (key: string) => path + '.' + key
 
-  const proxy: ProxyType = new Proxy(func, {
+  const proxy = new Proxy(func as ProxyType, {
     get(_, key) {
       if (typeof key !== 'string')
         return
 
-      console.log(`get(${toPath(key)})`)
+      let tmp: unknown
 
-      return toKcpProxy(toPath(key), getter, setter)
+      switch (key) {
+        case 'then':
+          try {
+            tmp = getter(path)
+            if (tmp instanceof Promise)
+              return tmp.then.bind(tmp)
+            else {
+              const res = Promise.resolve(tmp)
+              return res.then.bind(res)
+            }
+          } catch (err) {
+            const res = Promise.reject(err)
+            return res.then.bind(res)
+          }
+        case 'catch':
+          try {
+            tmp = getter(path)
+            if (tmp instanceof Promise)
+              return tmp.catch.bind(tmp)
+            else {
+              const res = Promise.resolve(tmp)
+              return res.catch.bind(res)
+            }
+          } catch (err) {
+            const res = Promise.reject(err)
+            return res.catch.bind(res)
+          }
+        case 'finally':
+          try {
+            tmp = getter(path)
+            if (tmp instanceof Promise)
+              return tmp.finally.bind(tmp)
+            else {
+              const res = Promise.resolve(tmp)
+              return res.finally.bind(res)
+            }
+          } catch (err) {
+            const res = Promise.reject(err)
+            return res.finally.bind(res)
+          }
+        default:
+          if (isBadKey(key))
+            throw new Error(`Invalid key requested: "${key}"!`)
+          console.log(`get(${toPath(key)})`)
+          return toKcpProxy({ path: toPath(key), getter, setter })
+      }
     },
     set(_, key, value): boolean {
-      if (typeof key !== 'string')
+      if (typeof key !== 'string' || isBadKey(key))
         return false
 
       console.log(`set(${toPath(key)}) =`, value)
@@ -36,7 +94,7 @@ export function toKcpProxy(path: string, getter: (key: string) => Promise<any>, 
       return true
     },
     deleteProperty(_, key): boolean {
-      if (typeof key !== 'string')
+      if (typeof key !== 'string' || isBadKey(key))
         return false
 
       console.log(`delete(${toPath(key)})`)

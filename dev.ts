@@ -1,10 +1,13 @@
-import { webSocketHandler as wsh, routesHandler as rh, loadDB, unloadDB, saveDB } from "./server"
+import { createDirectClient } from "./client/direct"
+import { createSQLiteHandle, destroyKCPHandle } from "./db/sqlite"
+import { createHttpRoutes } from "./server/http"
+
+const handle = createSQLiteHandle()
 
 const server = Bun.serve({
-  routes: rh,
+  routes: createHttpRoutes(handle),
   hostname: '0.0.0.0',
   port: 3001,
-  websocket: wsh,
   fetch(req, server) {
     return new Response(Bun.file('./' + (URL.parse(req.url)?.pathname?.slice(1) || 'index.html')))
     // return new Response('OK')
@@ -13,11 +16,7 @@ const server = Bun.serve({
 
 console.log('Ready! ( http://localhost:3001 )')
 
-const dbname = 'default'
-const dbFunc = () => { }
-const link = loadDB(dbname, dbFunc, 'manual')
-
-const DB = link.root
+const DB = createDirectClient(handle)
 
 // DB.apple = (...args: any[]) => {
 //   console.log('called with:', ...args)
@@ -39,7 +38,17 @@ const DB = link.root
 //   }
 // }, 3000)
 
+setInterval(async () => {
+  if (typeof DB.count() === 'number') {
+    DB.count = (await DB.count) + 1
+    console.log('count:', DB.count())
+  }
+  else {
+    console.log('invalid count')
+  }
+}, 1000)
+
 process.on('exit', () => {
   server.stop(true)
-  unloadDB(dbname, dbFunc)
+  destroyKCPHandle(handle)
 })

@@ -1,5 +1,7 @@
-import { Observable, element } from "dynamics"
-import { KcpWebSocketClient } from "./kcp"
+// import { Observable, element } from "dynamics"
+import { createHttpClient } from "./client/http"
 
-var __forceLoader = element()
-__forceLoader = KcpWebSocketClient()
+// var __forceLoader = element()
+// __forceLoader = __forceLoader
+
+window.DB = createHttpClient()
