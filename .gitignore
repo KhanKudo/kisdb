@@ -3,6 +3,7 @@ node_modules
 
 *.kisdb.json
 *.db
+browser.js
 
 # output
 out

@@ -1,13 +1,13 @@
-import { toKcpProxy, type DataType, type ProxyType } from "../kcp"
+import { type DataType, type KCPHandle } from "../kcp"
 
 // kisdb HTTP (REST API) Client
-export function createHttpClient<T = any>(apiPath: string = '/kisdb'): ProxyType {
+export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
   const toPath = (key: string) => apiPath + encodeURIComponent(key)
 
-  return toKcpProxy({
+  return {
     path: '',
     async getter(key) {
       const res = await fetch(toPath(key), { method: 'GET' })
@@ -32,6 +32,18 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): ProxyType
         return
 
       throw new Error(`Got code ${res.status} from "${toPath(key)}" with error: ` + (await res.text() || res.statusText))
-    }
-  })
+    },
+    async subber(key, listener, type) {
+      const evt = new (EventSource as any)(toPath(key))
+      evt.onmessage = (event: any) => {
+        console.log("SSE Received:", event.data);
+        listener(...(JSON.parse(event.data) as [string, any]))
+      };
+
+      evt.onerror = (err: any) => {
+        console.error("SSE error:", err);
+        evt.close();
+      };
+    },
+  }
 }

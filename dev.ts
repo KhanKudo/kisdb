@@ -1,6 +1,6 @@
-import { createDirectClient } from "./client/direct"
 import { createSQLiteHandle, destroyKCPHandle } from "./db/sqlite"
 import { createHttpRoutes } from "./server/http"
+import { createVanillaViewer } from "./viewer/vanilla"
 
 const handle = createSQLiteHandle()
 
@@ -16,7 +16,7 @@ const server = Bun.serve({
 
 console.log('Ready! ( http://localhost:3001 )')
 
-const DB = createDirectClient(handle)
+const DB = createVanillaViewer(handle)
 
 // DB.apple = (...args: any[]) => {
 //   console.log('called with:', ...args)
@@ -41,10 +41,10 @@ const DB = createDirectClient(handle)
 setInterval(async () => {
   if (typeof DB.count() === 'number') {
     DB.count = (await DB.count) + 1
-    console.log('count:', DB.count())
+    // console.log('count:', DB.count())
   }
   else {
-    console.log('invalid count')
+    // console.log('invalid count')
   }
 }, 1000)
 
