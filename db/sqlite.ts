@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type KCPHandle, type SubType } from '../kcp'
+import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType } from '../kcp'
 
 const dbs = new Map<string, Database>()
 const subs = new Map<string, Set<KCPHandle>>()
@@ -131,7 +131,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
       })
 
       const relatedSubbers = new Set(subbers.keys().filter(k => !k.startsWith(key + '.')))
-      if (subbers.has(key))
+      if (subbers.hasKey(key))
         relatedSubbers.add(key)
 
       let relatedKeys: null | Set<string> = null
@@ -139,7 +139,6 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
         relatedKeys = new Set(likeKeyOnly.all(`${key}.%`).filter(({ key }) => relatedSubbers.has(key)).map(({ key }) => key))
       }
 
-      //TODO: needs to consider this too, all subkeys deleted, but some are re-added, thus simply overwritten, never deleted. Makes subbers complicated, yes...
       deleteLikeKey.run(key + '.%')
       if (typeof value === 'object' && value !== null) {
         if (Array.isArray(value))
@@ -168,7 +167,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   }
 
   function callSubbers(key: string, value?: DataType): void {
-    const list = subbers.get(key)
+    const list = subbers.getValues(key)
     if (!list)
       return
 
@@ -179,7 +178,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   }
 
   function callSubbersConditional(key: string, valueGetter: () => DataType | undefined): void {
-    const list = subbers.get(key)
+    const list = subbers.getValues(key)
     if (!list)
       return
 
@@ -190,13 +189,15 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     })
   }
 
-  const subbers: Map<string, Set<KCPHandle['setter']>> = new Map()
+  const subbers: BiMap<string, KCPHandle['setter']> = new BiMap()
 
-  function subber(key: string, listener: KCPHandle['setter'], type: SubType): void {
-    let list = subbers.get(key)
-    if (!list) {
-      list = new Set()
-      subbers.set(key, list)
+  function subber(key: string | null, listener: KCPHandle['setter'], type: SubType): void {
+    if (key === null) {
+      if (type !== 'never')
+        throw new Error('Invalid usage, type must be never when key is null')
+
+      subbers.deleteValue(listener)
+      return
     }
 
     switch (type) {
@@ -205,24 +206,21 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
         listener(key, getter(key))
       case 'next': {
         const once: KCPHandle['setter'] = (k, v) => {
-          list.delete(once)
-          if (list.size === 0)
-            subbers.delete(key)
+          // subber(k, once, 'never')
+          subbers.delete(k, once)
           listener(k, v)
         }
-        list.add(once)
+        subbers.add(key, once)
         break
       }
       //@ts-ignore
       case 'now+future':
         listener(key, getter(key))
       case 'future':
-        list.add(listener)
+        subbers.add(key, listener)
         break
       case 'never':
-        list.delete(listener)
-        if (list.size === 0)
-          subbers.delete(key)
+        subbers.delete(key, listener)
         break
       default:
         throw new Error(`Unknown subscription type! (${type})`)
