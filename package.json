@@ -1,9 +1,9 @@
 {
   "name": "@khankudo/kisdb",
-  "module": "index.ts",
+  "module": "kcp.ts",
   "scripts": {
-    "build": "bun build client.js --target browser --bundle --outfile browser.js",
-    "dev": "bun run dev.ts"
+    "build": "cd dev; bun build client.js --target browser --bundle --outfile browser.js",
+    "dev": "cd dev; bun run dev.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -14,5 +14,12 @@
   "type": "module",
   "dependencies": {
     "dynamics": "link:dynamics"
+  },
+  "exports": {
+    ".": "./kcp.ts",
+    "./viewer/*": "./viewer/*.ts",
+    "./client/*": "./client/*.ts",
+    "./server/*": "./server/*.ts",
+    "./db/*": "./db/*.ts"
   }
 }

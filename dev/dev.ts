@@ -1,6 +1,6 @@
-import { createSQLiteHandle, destroyKCPHandle } from "./db/sqlite"
-import { createHttpRoutes } from "./server/http"
-import { createVanillaViewer } from "./viewer/vanilla"
+import { createSQLiteHandle, destroyKCPHandle } from "../db/sqlite"
+import { createHttpRoutes } from "../server/http"
+import { createVanillaViewer } from "../viewer/vanilla"
 
 const handle = createSQLiteHandle()
 
@@ -18,15 +18,15 @@ console.log('Ready! ( http://localhost:3001 )')
 
 const DB = createVanillaViewer(handle)
 
-// DB.apple = (...args: any[]) => {
-//   console.log('called with:', ...args)
-//   return 'banana'
-// }
+DB.apple = (arg: any, x: any) => {
+  console.log('called with:', arg, x)
+  return 'banana'
+}
 
-// DB.skype = (msg: string) => {
-//   console.log('\t>\tSkype Message:\t', msg)
-//   DB.name = msg
-// }
+DB.skype = (msg: string, x: any) => {
+  console.log('\t>\tSkype Message:\t', msg, x)
+  DB.msg = msg
+}
 
 // DB.saveDB = () => {
 //   saveDB(dbname)

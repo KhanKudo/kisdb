@@ -1,18 +1,34 @@
 export type DataType = string | number | boolean | null | { [key: string]: DataType } | DataType[]
+export type ResultType = Promisify<DataType | undefined | void>
+export type CallerType = (arg?: DataType) => ResultType
 
 export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
-export type ReturnType<T> = T | Promise<T>
+export type Promisify<T> = T | Promise<T>
 
 export interface KCPHandle {
-  getter(key: string): ReturnType<DataType | void>
-  setter(key: string, value?: DataType): ReturnType<void>
-  subber(key: string | null, listener: KCPHandle['setter'], type: SubType): ReturnType<void>
-  path?: string
+  getter(key: string): ResultType
+  setter(key: string, value?: DataType | CallerType): ResultType
+  subber(key: string | null, listener: KCPHandle['setter'], type: SubType): Promisify<void>
 }
 
 export function isBadKey(key: string): boolean {
   return /[$%]|(?:\.(?:then|finally|catch|toString|toJSON)(?:\.|$))/.test(key)
+}
+
+export class FuncHasher {
+  private map: WeakMap<Function, string> = new WeakMap()
+  private counter: number = 0
+
+  hash(func: Function): string {
+    let value = this.map.get(func)
+    if (value)
+      return value
+
+    value = (++this.counter).toString(36)
+    this.map.set(func, value)
+    return value
+  }
 }
 
 export class BiMap<K = string, V = (...args: any[]) => any> {
@@ -57,14 +73,18 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
     ks.add(key)
   }
 
-  delete(key: K, value: V): void {
-    const vs = this.kv.get(key)
-    if (vs?.delete(value) && vs.size === 0)
-      this.kv.delete(key)
-
+  // returns true, if that key has no more values linked to it
+  delete(key: K, value: V): boolean {
     const ks = this.vk.get(value)
     if (ks?.delete(key) && ks.size === 0)
       this.vk.delete(value)
+
+    const vs = this.kv.get(key)
+    if (vs?.delete(value) && vs.size === 0) {
+      this.kv.delete(key)
+      return true
+    }
+    return false
   }
 
   deleteKey(key: K): void {

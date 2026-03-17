@@ -2,7 +2,7 @@ import type { BunRequest, Server } from "bun"
 import type { DataType, KCPHandle, SubType } from "../kcp"
 
 // kisdb HTTP (REST API) Server
-export function createHttpRoutes<T = any>({ path, getter, setter, subber }: KCPHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
+export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
@@ -12,7 +12,7 @@ export function createHttpRoutes<T = any>({ path, getter, setter, subber }: KCPH
     const url = new URL(req.url)
     const key = url.searchParams.get('key') ?? url.pathname.slice(apiPath.length).replaceAll('/', '.')
 
-    let tmp: unknown
+    let response: Response
     switch (req.method) {
       case 'GET': {
         const isStream = req.headers.get('accept') === 'text/event-stream'
@@ -28,8 +28,12 @@ export function createHttpRoutes<T = any>({ path, getter, setter, subber }: KCPH
           if (!sender)
             return new Response(`MultiplexID not found! (${multiplex})`, { status: 400 })
 
-          subber(key, sender, subType)
-          return new Response('', { status: 200 })
+          try {
+            subber(key, sender, subType)
+            return new Response('', { status: 200 })
+          } catch (err) {
+            return new Response(`Failed to subscribe (${key}|${sender}|${subType}) with error: ${err}`, { status: 400 })
+          }
         }
 
         if (isStream) {
@@ -64,7 +68,11 @@ export function createHttpRoutes<T = any>({ path, getter, setter, subber }: KCPH
             })
           }
 
-          subber(key, sub, subType)
+          try {
+            subber(key, sub, subType)
+          } catch (err) {
+            return new Response(`Failed to subscribe (${key}|${sub}|${subType}) with error: ${err}`, { status: 400 })
+          }
 
           return new Response(stream.readable, {
             headers: {
@@ -75,26 +83,49 @@ export function createHttpRoutes<T = any>({ path, getter, setter, subber }: KCPH
           })
         }
         else {
-          tmp = getter(key)
-          if (tmp === undefined)
-            return new Response('')
-          else
-            return Response.json(tmp)
+          try {
+            const res = getter(key)
+            if (res === undefined)
+              return new Response('')
+            else
+              return Response.json(res)
+          } catch (err) {
+            return new Response(`Failed to get (${key}) with error: ${err}`, { status: 400 })
+          }
         }
       }
       case 'POST':
-        tmp = new Response('', { status: 201 })
-        return req.json().then(value => setter(key, value as DataType)?.then(() => tmp as Response) ?? tmp as Response)
+        response = new Response('', { status: 201 })
+        try {
+          return req.json().then(value => {
+            const res = setter(key, value as DataType)
+            if (res instanceof Promise)
+              return res.then(() => response)
+            else
+              return response
+          })
+        } catch (err) {
+          return new Response(`Failed to set (${key}) with error: ${err}`, { status: 400 })
+        }
       case 'DELETE':
-        tmp = new Response('', { status: 200 })
-        return setter(key)?.then(() => tmp as Response) ?? tmp as Response
+        response = new Response('', { status: 200 })
+
+        try {
+          const res = setter(key)
+          if (res instanceof Promise)
+            return res.then(() => response)
+          else
+            return response
+        } catch (err) {
+          return new Response(`Failed to delete (${key}) with error: ${err}`, { status: 400 })
+        }
       default:
         return new Response('', { status: 405 })
     }
   }
 
   return {
-    [apiPath]: handleRequest,
+    [apiPath.slice(0, -1)]: handleRequest,
     [apiPath + '*']: handleRequest,
   }
 }

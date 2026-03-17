@@ -12,8 +12,7 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
 
   const subbers: BiMap<string, (key: string, data?: DataType) => void> = new BiMap()
 
-  return {
-    path: '',
+  const handle: KCPHandle = {
     async getter(key) {
       const res = await fetch(toPath(key), { method: 'GET' })
       if (res.status === 200) {
@@ -35,8 +34,13 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
         delete config.body
       }
       const res = await fetch(toPath(key), config)
-      if (res.ok)
-        return
+      if (res.ok) {
+        if (res.headers.get('content-length') === '0')
+          return undefined
+        else {
+          return res.json() as Promise<DataType>
+        }
+      }
 
       throw new Error(`Got code ${res.status} from "${toPath(key)}" with error: ` + (await res.text() || res.statusText))
     },
@@ -56,16 +60,39 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
         return
       }
 
-      if (type === 'never')
-        subbers.delete(key, listener)
-      else
+      if (type === 'never') {
+        if (!subbers.delete(key, listener))
+          return // don't cancel key-subscription, since other listeners still want it
+      }
+      else {
+        const hadKey = subbers.hasKey(key)
         subbers.add(key, listener)
+        if (hadKey && evtSrc)
+          return // no need to resubscribe on server, since this client is already subbed to that key
+      }
 
-      if (evtSrc === null) {
+      if (muxId) {
+        const res = await fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET' })
+        if (res.status === 200)
+          return
+
+        throw new Error(`Got code ${res.status} from "${toPath(key)}" with error: ` + (await res.text() || res.statusText))
+      }
+      else if (evtSrc) {
+        return // auto-queued thanks to subbers list
+      }
+      else {
         evtSrc = new (EventSource as any)(apiPath + `?getmux&key=${encodeURIComponent(key)}&type=${encodeURIComponent(type)}`)
         evtSrc!.onmessage = (event: any) => {
           if (!muxId) {
             muxId = event.data
+            for (const k of subbers.keys()) {
+              if (k === key)
+                continue
+              //TODO: create a helper inside kcp.ts to handle all the weird cases of multiplexed listeners.
+              // here for example the type is not respected,
+              fetch(apiPath + `?key=${encodeURIComponent(k)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET' })
+            }
             return
           }
           console.log("SSE Received:", event.data)
@@ -77,18 +104,15 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
           evtSrc?.close()
           evtSrc = null
           muxId = null
+          setTimeout(() => {
+            for (const k of subbers.keys())
+              for (const v of subbers.getValues(k) ?? [])
+                handle.subber(k, v, 'future')
+          }, 5000)
         }
-      }
-      else if (muxId) {
-        const res = await fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET' })
-        if (res.status === 200)
-          return
-
-        throw new Error(`Got code ${res.status} from "${toPath(key)}" with error: ` + (await res.text() || res.statusText))
-      }
-      else {
-        throw new Error('evtSrc is present, but no muxId exists. Don\'t know what to do with that.')
       }
     },
   }
+
+  return handle
 }

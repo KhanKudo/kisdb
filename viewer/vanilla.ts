@@ -4,7 +4,7 @@ export type ProxyType<T = void, K extends any[] | Record<string, any> = Record<s
 
 export const proxyRefs = new Map<string, ProxyType>()
 
-export function createVanillaViewer({ path = '', getter, setter, subber }: KCPHandle): ProxyType {
+export function createVanillaViewer({ getter, setter, subber }: KCPHandle, path: string = ''): ProxyType {
   if (proxyRefs.has(path))
     return proxyRefs.get(path)!
 
@@ -71,18 +71,24 @@ export function createVanillaViewer({ path = '', getter, setter, subber }: KCPHa
           if (isBadKey(key))
             throw new Error(`Invalid key requested: "${key}"!`)
           console.log(`get(${toPath(key)})`)
-          return createVanillaViewer({ path: toPath(key), getter, setter, subber })
+          return createVanillaViewer({ getter, setter, subber }, toPath(key))
       }
     },
     set(_, key, value): boolean {
+      switch (key) {
+        case '$on':
+          subber(path, value, 'future')
+          break
+        case '$onnow':
+          subber(path, value, 'now+future')
+          break
+        case '$once':
+          subber(path, value, 'next')
+          break
+      }
+
       if (typeof key !== 'string' || isBadKey(key))
         return false
-
-      // TEMPORARY
-      if (typeof value === 'function') {
-        subber(toPath(key), value, 'now+future')
-        return true
-      }
 
       console.log(`set(${toPath(key)}) =`, value)
 

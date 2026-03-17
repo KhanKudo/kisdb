@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType } from '../kcp'
+import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType } from '../kcp'
 
 const dbs = new Map<string, Database>()
 const subs = new Map<string, Set<KCPHandle>>()
@@ -28,6 +28,8 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   const likeKey = db.query<{ key: string, value: string | Specials }, string>('SELECT * FROM _kvstore WHERE key LIKE ?')
   const likeKeyOnly = db.query<{ key: string, value: string | Specials }, string>('SELECT key FROM _kvstore WHERE key LIKE ?')
   const deleteLikeKey = db.query<void, string>('DELETE FROM _kvstore WHERE key LIKE ?')
+
+  const kpidefs: Map<string, CallerType> = new Map()
 
   function getObj(key: string, asArray: true): DataType[] | undefined
   function getObj(key: string, asArray?: false): Record<string, DataType> | undefined
@@ -81,25 +83,52 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     return obj
   }
 
-  function setObj(key: string, obj: Record<string, DataType>): void {
+  function setVal(key: string, value?: Exclude<DataType, object> | CallerType): ResultType {
+    if (value === undefined) {
+      deleteExactKey.run(key)
+      callSubbers(key)
+      kpidefs.delete(key)
+    }
+    else if (typeof value === 'function') {
+      deleteExactKey.run(key)
+      callSubbers(key)
+      kpidefs.set(key, value)
+    }
+    else if (kpidefs.has(key)) {
+      return kpidefs.get(key)!(value)
+    }
+    else {
+      updateExactKey.run(key, JSON.stringify(value))
+      callSubbers(key, value)
+    }
+  }
+
+  function setObj(key: string, obj: Record<string, DataType>): ResultType {
+    if (kpidefs.has(key)) {
+      return kpidefs.get(key)!(obj)
+    }
+
     for (const k in obj) {
       if (typeof obj[k] === 'object' && obj[k] !== null) {
         setObj(key + '.' + k, obj[k] as any)
       }
       else {
-        updateExactKey.run(key + '.' + k, JSON.stringify(obj[k]))
-        callSubbers(key + '.' + k, obj[k])
+        setVal(key + '.' + k, obj[k])
       }
     }
   }
 
-  function getter(key: string): DataType | undefined {
+  function getter(key: string): ResultType {
     if (isBadKey(key))
       throw new Error(`Invalid getter key: "${key}"`)
 
+    if (kpidefs.has(key)) {
+      return kpidefs.get(key)!()
+    }
+
     const res = exactKey.get(key)
     if (res === null)
-      return
+      return undefined
 
     switch (res.value) {
       case Specials.OBJECT:
@@ -111,9 +140,13 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     }
   }
 
-  function setter(key: string, value?: DataType): void {
+  function setter(key: string, value?: DataType): ResultType {
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)
+
+    if (kpidefs.has(key)) {
+      return kpidefs.get(key)!(value)
+    }
 
     db.transaction(() => {
       key.split('.').reduce((p, k) => {
@@ -149,13 +182,8 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
         setObj(key, value as any)
         callSubbers(key, value)
       }
-      else if (value === undefined) {
-        deleteExactKey.run(key)
-        callSubbers(key)
-      }
       else {
-        updateExactKey.run(key, JSON.stringify(value))
-        callSubbers(key, value)
+        setVal(key, value)
       }
 
       if (relatedKeys) {
@@ -191,7 +219,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
 
   const subbers: BiMap<string, KCPHandle['setter']> = new BiMap()
 
-  function subber(key: string | null, listener: KCPHandle['setter'], type: SubType): void {
+  async function subber(key: string | null, listener: KCPHandle['setter'], type: SubType) {
     if (key === null) {
       if (type !== 'never')
         throw new Error('Invalid usage, type must be never when key is null')
@@ -200,10 +228,13 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
       return
     }
 
+    if (isBadKey(key))
+      throw new Error(`Invalid subber key: "${key}"`)
+
     switch (type) {
       //@ts-ignore
       case 'now+next':
-        listener(key, getter(key))
+        listener(key, (await getter(key))!)
       case 'next': {
         const once: KCPHandle['setter'] = (k, v) => {
           // subber(k, once, 'never')
@@ -215,7 +246,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
       }
       //@ts-ignore
       case 'now+future':
-        listener(key, getter(key))
+        listener(key, (await getter(key))!)
       case 'future':
         subbers.add(key, listener)
         break
