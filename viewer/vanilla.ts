@@ -78,13 +78,13 @@ export function createVanillaViewer({ getter, setter, subber }: KCPHandle, path:
       switch (key) {
         case '$on':
           subber(path, value, 'future')
-          break
+          return true
         case '$onnow':
           subber(path, value, 'now+future')
-          break
+          return true
         case '$once':
           subber(path, value, 'next')
-          break
+          return true
       }
 
       if (typeof key !== 'string' || isBadKey(key))

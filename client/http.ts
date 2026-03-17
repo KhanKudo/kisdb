@@ -96,7 +96,8 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
             return
           }
           console.log("SSE Received:", event.data)
-          subbers.callValues(key, ...(JSON.parse(event.data) as [string, any]))
+          const [k, v] = JSON.parse(event.data) as [string, any]
+          subbers.callValues(k, k, v)
         }
 
         evtSrc!.onerror = (err: any) => {
