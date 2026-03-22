@@ -1,12 +1,12 @@
 import type { BunRequest, Server } from "bun"
-import type { DataType, KCPHandle, SubType } from "../kcp"
+import type { DataType, KCPHandle, ListenerType, SubType } from "../kcp"
 
 // kisdb HTTP (REST API) Server
 export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
-  const muxSenders: Map<string, (key: string, value?: DataType) => void> = new Map()
+  const muxSenders: Map<string, ListenerType> = new Map()
 
   function handleRequest(req: BunRequest, server: Server): Response | Promise<Response> {
     const url = new URL(req.url)
@@ -44,7 +44,7 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle,
 
           console.log('subbed to', key)
 
-          const sub = (key: string, data?: DataType) => {
+          const sub = (data: DataType | undefined, key: string) => {
             console.log('subber')
             writer.write(`data: ${JSON.stringify(data === undefined ? [key] : [key, data])}\n\n`);
           }

@@ -7,10 +7,10 @@
     <input type="number" id="y" step="1" onchange="DB.count = parseInt(window.y.value)">
     <script src="browser.js"></script>
     <script>
-      DB.count.$onnow = (k,d)=>window.x.innerText = d
-      DB.count.$on = (k,d)=>console.log('key:',k)
-      DB.count.$on = (k  ,d)=>console.log('data:',d)
-      DB.count.$onnow = (k,d)=>window.x.style.color = d%2?'blue':'red'
+      DB.count.$onnow = (d,k)=>window.x.innerText = d
+      DB.count.$on = (d,k)=>console.log('key:',k)
+      DB.count.$on = (d,k)=>console.log('data:',d)
+      DB.count.$onnow = (d,k)=>window.x.style.color = d%2?'blue':'red'
     </script>
   </body>
 </html>

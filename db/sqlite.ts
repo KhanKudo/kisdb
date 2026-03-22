@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType } from '../kcp'
+import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType, type ListenerType } from '../kcp'
 
 const dbs = new Map<string, Database>()
 const subs = new Map<string, Set<KCPHandle>>()
@@ -201,7 +201,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
 
     setImmediate(() => {
       for (const sub of list)
-        sub(key, value)
+        sub(value, key)
     })
   }
 
@@ -213,13 +213,13 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     setImmediate(() => {
       const value = valueGetter()
       for (const sub of list)
-        sub(key, value)
+        sub(value, key)
     })
   }
 
-  const subbers: BiMap<string, KCPHandle['setter']> = new BiMap()
+  const subbers: BiMap<string, ListenerType> = new BiMap()
 
-  async function subber(key: string | null, listener: KCPHandle['setter'], type: SubType) {
+  async function subber(key: string | null, listener: ListenerType, type: SubType) {
     if (key === null) {
       if (type !== 'never')
         throw new Error('Invalid usage, type must be never when key is null')
@@ -234,19 +234,19 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     switch (type) {
       //@ts-ignore
       case 'now+next':
-        listener(key, (await getter(key))!)
+        listener((await getter(key))!, key)
       case 'next': {
-        const once: KCPHandle['setter'] = (k, v) => {
+        const once: ListenerType = (v, k) => {
           // subber(k, once, 'never')
           subbers.delete(k, once)
-          listener(k, v)
+          listener(v, k)
         }
         subbers.add(key, once)
         break
       }
       //@ts-ignore
       case 'now+future':
-        listener(key, (await getter(key))!)
+        listener((await getter(key))!, key)
       case 'future':
         subbers.add(key, listener)
         break
@@ -287,71 +287,3 @@ export function destroyKCPHandle(handle: KCPHandle) {
     console.log(`DB ${dbname} unloaded`)
   }
 }
-
-// // can be used to manually compacten the DB, otherwise done automatically according to the set AutoCompactionType
-// export function saveDB(dbname: string) {
-//   if (uncompacted.has(dbname)) {
-//     //TODO will require metadata
-//     fs.writeFileSync(`${dbname}.kisdb.json`, JSON.stringify(dbs.get(dbname)))
-//     uncompacted.delete(dbname)
-//   }
-// }
-
-// export const routesHandler: Record<string, (req: Bun.BunRequest, server: Bun.Server) => void> = {
-//   '/kisdb.js'(req, server) {
-//     return new Response(Bun.file(import.meta.dir + '/browser.js'))
-//   },
-//   '/kisdb.js/:dbname'(req, server) {
-//     return new Response(
-//       fs.readFileSync(import.meta.dir + '/browser.js').toString().replace('var __forceLoader = element();\n__forceLoader = KcpWebSocketClient();', `
-// var DB;
-// var KCL = new KcpWebSocketClient('/kisdb/${encodeURIComponent((req.params as any).dbname)}');
-// KCL.obs.on(root => {DB = root})
-//       `), { headers: { "Content-Type": 'text/javascript' } })
-//   },
-//   '/kisdb'(req, server) {
-//     server.upgrade(req)
-//   },
-//   '/kisdb/:dbname'(req, server) {
-//     server.upgrade(req, { data: req.params })
-//   }
-// }
-
-// export const webSocketHandler: Bun.WebSocketHandler<KcpLink> = {
-//   open(ws: Bun.ServerWebSocket<KcpLink | undefined>): void {
-//     let dbname = 'default'
-//     if (ws.data !== null && typeof ws.data === 'object' && 'dbname' in ws.data && typeof ws.data.dbname === 'string') {
-//       dbname = ws.data.dbname
-//     }
-
-//     ws.send = ws.send.bind(ws)
-
-//     ws.data = loadDB(dbname, ws.send) //TODO: potential problem if .bind(ws) is not used, but if used, must account for unloadDB parameter
-
-//       ; (<any>ws.data).pinger = setInterval(() => ws.send('PING'), 29000)
-
-//     ws.send(',' + Operators.OVERWRITE + ',' + JSON.stringify(ws.data))
-//     //TODO: just temporary, doesn't work for defined FNZs deeper than root
-//     const dfs = ws.data.root.__definedFnz
-//     console.log('dfs:', dfs)
-//     if (dfs.length)
-//       ws.send('.,' + Operators.FUNCTIONIZE + ',' + dfs.length + ',' + dfs.join(','))
-
-//     console.log(`Socket opened with DB ${dbname}`)
-//   },
-//   message(ws: Bun.ServerWebSocket<KcpLink>, message: string | Buffer): void | Promise<void> {
-//     if (typeof message !== 'string')
-//       return console.warn('Received a Buffer message which is not supported!')
-
-//     subs.get(ws.data.dbname)?.forEach(sub => {
-//       if (sub === ws.send)
-//         return
-//       sub(message)
-//     })
-//     ws.data.receiveKCP(message)
-//   },
-//   close(ws: Bun.ServerWebSocket<KcpLink>, code: number, reason: string): void | Promise<void> {
-//     clearInterval((<any>ws.data).pinger)
-//     unloadDB(ws.data.dbname, ws.send)
-//   }
-// }

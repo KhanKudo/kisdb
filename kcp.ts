@@ -4,17 +4,314 @@ export type CallerType = (arg?: DataType) => ResultType
 
 export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
+export type ListenerType = (value: DataType | undefined, key: string) => void
+
 export type Promisify<T> = T | Promise<T>
 
 export interface KCPHandle {
   getter(key: string): ResultType
   setter(key: string, value?: DataType | CallerType): ResultType
-  subber(key: string | null, listener: KCPHandle['setter'], type: SubType): Promisify<void>
+  subber(key: string | null, listener: ListenerType, type: SubType): Promisify<void>
+}
+
+export type KcpContext<T extends object = {}> = Record<string, unknown> & T
+
+export interface KCPCtxHandle<T extends object = {}> {
+  getter(ctx: KcpContext<T>, key: string): ResultType
+  setter(ctx: KcpContext<T>, key: string, value?: DataType | CallerType): ResultType
+  subber(ctx: KcpContext<T>, key: string | null, listener: ListenerType, type: SubType): Promisify<void>
 }
 
 export function isBadKey(key: string): boolean {
   return /[$%]|(?:\.(?:then|finally|catch|toString|toJSON)(?:\.|$))/.test(key)
 }
+
+// TODO: handle potential security bug with subbers and function-values.
+// Subber should be subbed to raw-db entry at the given key, never receive other's calling arguments or responses
+
+//TODO: helper for client & server subber handling
+// must support multiplexing of received data based on key-value and auto-call related listeners
+// must support sub-types (e.g. once) and smartly accept a function to create and a function to destroy a key-subscription (helper must handle duplicate listeners, etc.)
+// must return a function that is to be called by any received subscription events (will accept (key,value) arguments), the above mentioned ^^^ sub/unsub functions are global and won't take a listener, but use this one instead
+
+// SubberService is a class intended for DBs
+// SubberHelper (or similar) should be a function intended to aid clients and servers with handling subbers and their lifecycles as well as efficient multiplexing
+// export class SubberService {
+//   private subbers: BiMap<string, (value?: DataType) => ResultType> = new BiMap()
+
+//   constructor(private getter: (key: string) => ResultType) {
+
+//   }
+
+//   add(listener: CallerType): void {
+
+//   }
+
+//   hasSub(key: string): boolean {
+//     return this.subbers.hasKey(key)
+//   }
+
+//   trigger(key: string, value?: DataType): void {
+//     return this.subbers.callValues(key, value)
+//   }
+
+//   triggerHeavy(key: string, getValue: () => undefined | DataType): void {
+//     if (!this.subbers.hasKey(key))
+//       return
+
+//     return this.subbers.callValues(key, getValue())
+//   }
+// }
+
+// client-side sub-helper
+export class SubMux {
+  private subbers: BiMap<string, ListenerType> = new BiMap()
+  private cache: Map<string, DataType | undefined> = new Map()
+
+  private awaitNow: Map<string, Set<ListenerType>> = new Map()
+  private awaitNext: Map<string, Set<ListenerType>> = new Map()
+
+  private mySub: ListenerType
+
+  get listener() {
+    return this.mySub
+  }
+
+  getSubber(): KCPHandle['subber'] {
+    return this.sub.bind(this)
+  }
+
+  static MISS = Symbol('cache miss')
+
+  tryCache(key: string): DataType | undefined | Symbol {
+    if (!this.cache.has(key))
+      return SubMux.MISS
+
+    return this.cache.get(key)
+  }
+
+  constructor(private subberFunc: KCPHandle['subber']) {
+    this.mySub = (function (this: SubMux, value: DataType | undefined, key: string) {
+      this.cache.set(key, value)
+
+      let nowSubs = this.awaitNow.get(key)
+      if (nowSubs) {
+        this.awaitNow.delete(key)
+        for (const sub of nowSubs) {
+          try {
+            sub(value, key)
+          } catch (err) { console.error(err) }
+        }
+        return
+      }
+
+      let nextSubs = this.awaitNext.get(key)
+      if (nextSubs) {
+        this.awaitNext.delete(key)
+        for (const sub of nextSubs) {
+          try {
+            sub(value, key)
+          } catch (err) { console.error(err) }
+        }
+
+        if (!this.subbers.hasKey(key)) {
+          this.cache.delete(key)
+          return
+        }
+        // no return here
+      }
+
+      for (const sub of this.subbers.getValues(key) ?? []) {
+        try {
+          sub(value, key)
+        } catch (err) { console.error(err) }
+      }
+    }).bind(this)
+  }
+
+  // calls provided subberFunc (or existing one) as if it's a new server, to set up all currently active subs again
+  reconnect(newSubberFunc?: KCPHandle['subber']): void {
+    if (newSubberFunc)
+      this.subberFunc = newSubberFunc
+
+    this.cache.clear()
+
+    for (const key of this.subbers.keys())
+      this.subberFunc(key, this.mySub, 'now+future') // assume something has changed during disconnect, so request now-event as a kind of missed future-event
+
+    for (const key of this.awaitNext.keys())
+      if (!this.subbers.hasKey(key))
+        this.subberFunc(key, this.mySub, 'now+next') // assume something has changed during disconnect, this.awaitNow is still unchanged
+  }
+
+  sub(key: string | null, listener: ListenerType, type: SubType): void {
+    if (key === null) {
+      if (type !== 'never')
+        throw new Error('type must be never, when key is null')
+
+      this.unsub(listener)
+      return
+    }
+
+    if (type === 'now+future' || type === 'now+next') {
+      if (this.cache.has(key)) {
+        try {
+          listener(this.cache.get(key), key)
+        } catch (err) { console.error(err) }
+        type = type.slice(4) as 'next' | 'future'
+      }
+      else {
+        let list = this.awaitNow.get(key)
+        if (list)
+          type = type.slice(4) as 'next' | 'future'
+        else
+          this.awaitNow.set(key, list = new Set())
+        list.add(listener)
+      }
+    }
+
+    switch (type) {
+      case 'now+future':
+      case 'future': {
+        const list = this.awaitNext.get(key)
+        if (list && list.delete(listener) && list.size === 0)
+          this.awaitNext.delete(key)
+
+        if (this.subbers.hasKey(key) && type !== 'now+future') {
+          this.subbers.add(key, listener)
+        } else {
+          this.subbers.add(key, listener)
+          this.subberFunc(key, this.mySub, type)
+        }
+        break
+      }
+      case 'now+next':
+      case 'next': {
+        const removedFuture = this.subbers.delete(key, listener)
+        let list = this.awaitNext.get(key)
+        if (list) {
+          list.add(listener)
+          if (removedFuture || type === 'now+next')
+            this.subberFunc(key, this.mySub, type)
+        } else {
+          this.awaitNext.set(key, list = new Set())
+          list.add(listener)
+          if (removedFuture || !this.subbers.hasKey(key) || type === 'now+next')
+            this.subberFunc(key, this.mySub, type)
+        }
+        break
+      }
+      case 'never': {
+        // unregister now-listener, but keep now-list (even if empty) since mySub uses the list's existence as a flag for upcoming now-events
+        this.awaitNow.get(key)?.delete(listener)
+
+        const hasFuture = this.subbers.hasKey(key)
+        const hasNext = this.awaitNext.get(key)
+
+        if (!hasFuture && !hasNext)
+          return
+
+        // ASSUMES: a listener can never be both in future and next list
+        const removedFuture = hasFuture && this.subbers.delete(key, listener)
+        const removedNext = hasNext && hasNext.delete(listener) && hasNext.size === 0
+        if (removedNext)
+          this.awaitNext.delete(key)
+
+        if (removedFuture) {
+          if (hasNext) {
+            this.subberFunc(key, this.mySub, 'next')
+          }
+          else {
+            this.subberFunc(key, this.mySub, 'never')
+            this.cache.delete(key)
+          }
+        }
+        else if (removedNext) {
+          if (hasFuture) {
+            // do nothing
+          }
+          else {
+            this.subberFunc(key, this.mySub, 'never')
+            this.cache.delete(key)
+          }
+        }
+        break
+      }
+    }
+  }
+
+  // clears all internal lists and unsubscribes host-listener from all assigned keys
+  destroy(): void {
+    this.subberFunc(null, this.mySub, 'never')
+    this.cache.clear()
+    this.awaitNow.clear()
+    this.awaitNext.clear()
+    this.subbers.clear()
+  }
+
+  // register for all future changes
+  on(key: string, listener: ListenerType): void {
+    this.sub(key, listener, 'future')
+  }
+
+  // register for the current state and all future changes
+  onNow(key: string, listener: ListenerType): void {
+    this.sub(key, listener, 'now+future')
+  }
+
+  // register for only the next change
+  once(key: string, listener: ListenerType): void {
+    this.sub(key, listener, 'next')
+  }
+
+  // register for the current state and only the next change
+  onceNow(key: string, listener: ListenerType): void {
+    this.sub(key, listener, 'now+next')
+  }
+
+  // unregister from given key
+  off(key: string, listener: ListenerType): void {
+    this.sub(key, listener, 'never')
+  }
+
+  // unregister listener from all keys
+  unsub(listener: ListenerType): void {
+    for (const key of this.subbers.getKeys(listener) ?? []) {
+      this.sub(key, listener, 'never')
+    }
+  }
+}
+
+
+// Flow should be:
+//    from DB-side, the same listener ref is considered as one connection. From db-side, one connection can only ever have one listener.
+//        That one listener is itself responsible (or rather it's corresponding client on the receiving end) for splitting out the key subscription.
+//        The DB-side doesn't care about what parts of the app/client subbed, only the connection as a whole unit from db-side acts as a subber.
+//        Same db sub-service can handle different connections from http-server, websocket-server or whatever, it doesn't matter. A connection is a connection.
+//      * If the sub-service has a connection subbed to key XYZ as 'future' but then later gets from same connection sub to same key XYZ as 'now+next', then send curr and destroy on next. Overwrites prior 'future' event
+//    from server-side (http-case), through the connection identifier (muxId), the responsible listener should be obtained and then simply given over to db-subber
+//    from client-side, this is where the sub-helper must give each listener that requested a subscription it's value corresponding to the specified key.
+//        The client must also differentiate when same listener changes it's subtype in a subsequent subber call, then send further update
+//        If func A is subbed to key XYZ as 'future' and later func B requests sub to same key XYZ as 'next', this must be handled client-side.
+//          * The client must locally only give func B the next received appropriate event, then cancel it.
+//            |-> if client forwards the key XYZ as 'next' change to server->DB sub-service, the whole connection will be unsubbed from key XYZ on next change, invalidating client's still active 'future' listener.
+//
+//!!! this form of sub-helper vvv is not useful. The DB sub-service would handle all it's features anyways so it's just plain bloat.
+// export class SubHelper {
+//   private subs: Map<string, SubType> = new Map()
+
+//   constructor(private listener: (key: string, value?: DataType) => void, private subber: KCPHandle['subber']) {
+
+//   }
+
+//   sub(key: string, type: SubType = 'future') {
+
+//   }
+
+//   destroy(): void {
+//     this.subber(null, this.listener, 'never')
+//   }
+// }
 
 export class FuncHasher {
   private map: WeakMap<Function, string> = new WeakMap()
@@ -38,7 +335,6 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
   keys(): MapIterator<K> {
     return this.kv.keys()
   }
-
   values(): MapIterator<V> {
     return this.vk.keys()
   }
@@ -49,12 +345,18 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
   hasValue(value: V): boolean {
     return this.vk.has(value)
   }
+  has(key: K, value: V): boolean {
+    return this.kv.has(key) && this.vk.has(value)
+  }
 
   getValues(key: K): Set<V> | undefined {
     return this.kv.get(key)
   }
   getKeys(value: V): Set<K> | undefined {
     return this.vk.get(value)
+  }
+  get() {
+    return this.vk.entries()
   }
 
   add(key: K, value: V): void {
@@ -115,16 +417,20 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
     }
   }
 
-  //@ts-ignore
-  callKeys(value: V, ...args: Parameters<K>): void {
-    for (const k of this.vk.get(value) ?? []) {
-      (k as any)(...args)
-    }
+  clear(): void {
+    this.kv.clear()
+    this.vk.clear()
   }
-  //@ts-ignore
-  callValues(key: K, ...args: Parameters<V>): void {
-    for (const v of this.kv.get(key) ?? []) {
-      (v as any)(...args)
-    }
-  }
+
+  // callKeys(value: V, ...args: K extends (() => any) ? Parameters<K> : never): void {
+  //   for (const k of this.vk.get(value) ?? []) {
+  //     (k as any)(...args)
+  //   }
+  // }
+
+  // callValues(key: K, ...args: V extends (() => any) ? Parameters<V> : never): void {
+  //   for (const v of this.kv.get(key) ?? []) {
+  //     (v as any)(...args)
+  //   }
+  // }
 }
