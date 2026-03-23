@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType, type ListenerType } from '../kcp'
+import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType, type ListenerType, SubService } from '../kcp'
 
 const dbs = new Map<string, Database>()
-const subs = new Map<string, Set<KCPHandle>>()
+const dbSubs = new Map<string, Set<KCPHandle>>()
 
 export const enum Specials {
   OBJECT = 'OBJ',
@@ -86,12 +86,12 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   function setVal(key: string, value?: Exclude<DataType, object> | CallerType): ResultType {
     if (value === undefined) {
       deleteExactKey.run(key)
-      callSubbers(key)
+      subbers.trigger(key)
       kpidefs.delete(key)
     }
     else if (typeof value === 'function') {
       deleteExactKey.run(key)
-      callSubbers(key)
+      subbers.trigger(key)
       kpidefs.set(key, value)
     }
     else if (kpidefs.has(key)) {
@@ -99,7 +99,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     }
     else {
       updateExactKey.run(key, JSON.stringify(value))
-      callSubbers(key, value)
+      subbers.trigger(key, value)
     }
   }
 
@@ -140,6 +140,8 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     }
   }
 
+  const subbers = new SubService(getter)
+
   function setter(key: string, value?: DataType): ResultType {
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)
@@ -149,27 +151,11 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     }
 
     db.transaction(() => {
-      key.split('.').reduce((p, k) => {
-        updateExactKeyIfNotContainer.run(p, Specials.OBJECT)
-        callSubbersConditional(p, () => {
-          const value = exactKey.get(p)?.value
-          if (value === Specials.ARRAY)
-            return getObj(p, true)
-          else if (value === Specials.OBJECT)
-            return getObj(p)
-          else
-            return value
-        })
-        return p + '.' + k
-      })
-
-      const relatedSubbers = new Set(subbers.keys().filter(k => !k.startsWith(key + '.')))
-      if (subbers.hasKey(key))
-        relatedSubbers.add(key)
+      const relatedSubbers = subbers.getSubbed(key, false)
 
       let relatedKeys: null | Set<string> = null
       if (relatedSubbers.size > 0) {
-        relatedKeys = new Set(likeKeyOnly.all(`${key}.%`).filter(({ key }) => relatedSubbers.has(key)).map(({ key }) => key))
+        relatedKeys = new Set(likeKeyOnly.all(`${key}.%`).map(({ key }) => key)).intersection(relatedSubbers)
       }
 
       deleteLikeKey.run(key + '.%')
@@ -180,97 +166,52 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
           updateExactKey.run(key, Specials.OBJECT)
 
         setObj(key, value as any)
-        callSubbers(key, value)
+        subbers.trigger(key, value)
       }
       else {
         setVal(key, value)
       }
 
+      let k = key
+      while (true) {
+        k = k.slice(0, Math.max(0, k.lastIndexOf('.')))
+
+        updateExactKeyIfNotContainer.run(k, Specials.OBJECT)
+        subbers.triggerHeavy(k, () => {
+          const value = exactKey.get(k)?.value
+          if (value === Specials.ARRAY)
+            return getObj(k, true)
+          else if (value === Specials.OBJECT)
+            return getObj(k)
+          else
+            return value
+        })
+
+        if (!k)
+          break
+      }
+
       if (relatedKeys) {
-        for (const { key: deletedKey } of likeKeyOnly.all(`${key}.%`).filter(({ key }) => !relatedKeys.has(key))) {
-          callSubbers(deletedKey)
+        for (const deletedKey of relatedKeys.difference(new Set(likeKeyOnly.all(`${key}.%`).map(({ key }) => key)))) {
+          subbers.trigger(deletedKey)
         }
       }
     })()
   }
 
-  function callSubbers(key: string, value?: DataType): void {
-    const list = subbers.getValues(key)
-    if (!list)
-      return
-
-    setImmediate(() => {
-      for (const sub of list)
-        sub(value, key)
-    })
-  }
-
-  function callSubbersConditional(key: string, valueGetter: () => DataType | undefined): void {
-    const list = subbers.getValues(key)
-    if (!list)
-      return
-
-    setImmediate(() => {
-      const value = valueGetter()
-      for (const sub of list)
-        sub(value, key)
-    })
-  }
-
-  const subbers: BiMap<string, ListenerType> = new BiMap()
-
-  async function subber(key: string | null, listener: ListenerType, type: SubType) {
-    if (key === null) {
-      if (type !== 'never')
-        throw new Error('Invalid usage, type must be never when key is null')
-
-      subbers.deleteValue(listener)
-      return
-    }
-
-    if (isBadKey(key))
-      throw new Error(`Invalid subber key: "${key}"`)
-
-    switch (type) {
-      //@ts-ignore
-      case 'now+next':
-        listener((await getter(key))!, key)
-      case 'next': {
-        const once: ListenerType = (v, k) => {
-          // subber(k, once, 'never')
-          subbers.delete(k, once)
-          listener(v, k)
-        }
-        subbers.add(key, once)
-        break
-      }
-      //@ts-ignore
-      case 'now+future':
-        listener((await getter(key))!, key)
-      case 'future':
-        subbers.add(key, listener)
-        break
-      case 'never':
-        subbers.delete(key, listener)
-        break
-      default:
-        throw new Error(`Unknown subscription type! (${type})`)
-    }
-  }
-
   if (!dbs.has(dbname))
     dbs.set(dbname, db)
 
-  const handle = { path: '', getter, setter, subber }
+  const handle = { path: '', getter, setter, subber: subbers.getSubber() }
 
-  if (!subs.has(dbname))
-    subs.set(dbname, new Set())
-  subs.get(dbname)!.add(handle)
+  if (!dbSubs.has(dbname))
+    dbSubs.set(dbname, new Set())
+  dbSubs.get(dbname)!.add(handle)
   return handle
 }
 
 export function destroyKCPHandle(handle: KCPHandle) {
-  const entry = subs.entries().find(([k, ref]) => ref.has(handle))
+  const entry = dbSubs.entries().find(([k, ref]) => ref.has(handle))
   if (!entry)
     throw new Error('Handle already destroyed!')
 
@@ -281,7 +222,7 @@ export function destroyKCPHandle(handle: KCPHandle) {
     console.log(`Called unloadDB ${dbname}, removed provided handle but DB is still subscribed`)
   }
   else {
-    subs.delete(dbname)
+    dbSubs.delete(dbname)
     dbs.get(dbname)?.close()
     dbs.delete(dbname)
     console.log(`DB ${dbname} unloaded`)

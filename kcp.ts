@@ -65,11 +65,11 @@ export function isBadKey(key: string): boolean {
 
 // client-side sub-helper
 export class SubMux {
-  private subbers: BiMap<string, ListenerType> = new BiMap()
+  protected subbers: BiMap<string, ListenerType> = new BiMap()
   private cache: Map<string, DataType | undefined> = new Map()
 
-  private awaitNow: Map<string, Set<ListenerType>> = new Map()
-  private awaitNext: Map<string, Set<ListenerType>> = new Map()
+  protected awaitNow: Map<string, Set<ListenerType>> = new Map()
+  protected awaitNext: Map<string, Set<ListenerType>> = new Map()
 
   private mySub: ListenerType
 
@@ -279,6 +279,156 @@ export class SubMux {
     for (const key of this.subbers.getKeys(listener) ?? []) {
       this.sub(key, listener, 'never')
     }
+  }
+}
+
+// server-side sub-service
+export class SubService extends SubMux {
+  constructor(private getter: KCPHandle['getter']) {
+    super(async (key, listener, type) => {
+      if (key === null)
+        return
+
+      switch (type) {
+        case 'now+future':
+        case 'now+next':
+          listener(await getter(key) as DataType | undefined, key)
+          break
+        default:
+          break
+      }
+    })
+  }
+
+
+  // checks all related keys and triggers them as needed
+  // parents:
+  //  undef: includes parents,self,children
+  //  false: includes self,children
+  //   true: includes parents
+  setValue(key: string, value?: DataType, parents?: boolean) {
+    // TODO: make it much more efficient
+    if (parents !== false)
+      this.getSubbed(key, true).forEach(async k => {
+        this.listener(await this.getter(key) as DataType | undefined, k)
+      })
+
+    if (parents !== true)
+      for (const k of this.getSubbed(key, false)) {
+        if (k === key) {
+          this.listener(value, k)
+        } else {
+          let tmp: any = value
+          for (const t of k.slice(key.length + 2).split('.')) {
+            tmp = tmp?.[t]
+          }
+          this.listener(tmp, k)
+        }
+      }
+  }
+
+  // same as setValue, only resolves value if listeners exist
+  async setHeavyValue(key: string, valueGetter: () => ResultType, parents?: boolean) {
+    if (!this.isSubbed(key))
+      return
+
+    this.setValue(key, await valueGetter() as DataType | undefined, parents)
+  }
+
+  // only strictly triggers specified key listeners (no parents or children)
+  trigger(key: string, value?: DataType) {
+    this.listener(value, key)
+  }
+
+  // only strictly triggers specified key listeners (no parents or children)
+  async triggerHeavy(key: string, valueGetter: () => ResultType) {
+    if (!this.isSubbed(key, null))
+      return
+
+    this.listener(await valueGetter() as DataType | undefined, key)
+  }
+
+  // get keys that are have listeners attached
+  subbed(): Set<string> {
+    return new Set(this.subbers.keys())
+      .union(this.awaitNext)
+  }
+
+  // check whether the specified key is being listened for (includes parent paths)
+  // parents:
+  //  undef: includes parents,self,children
+  //  false: includes self,children
+  //   true: includes parents
+  getSubbed(key: string, parents?: boolean): Set<string> {
+    const subs = new Set<string>()
+    if (parents !== false) {
+      let k = key
+      while (true) {
+        k = k.slice(0, Math.max(0, k.lastIndexOf('.')))
+        if (this.subbers.hasKey(k) || this.awaitNext.has(k))
+          subs.add(k)
+
+        if (!k)
+          break
+      }
+
+      if (parents === true)
+        return subs
+    }
+
+    if (this.subbers.hasKey(key) || this.awaitNext.has(key))
+      subs.add(key)
+
+    key += '.'
+
+    for (const k of this.subbers.keys())
+      if (k.startsWith(key))
+        subs.add(k)
+
+    for (const k of this.awaitNext.keys())
+      if (k.startsWith(key))
+        subs.add(k)
+
+    return subs
+  }
+
+  // check whether the specified key is being listened for (includes parent paths)
+  // children:
+  //  undef: checks parent,self,children
+  //  false: checks parent,self
+  //   true: checks children
+  //   null: checks self
+  isSubbed(key: string, children?: boolean | null): boolean {
+    if (children === null)
+      return this.subbers.hasKey(key) || this.awaitNext.has(key)
+
+    if (children !== true) {
+      while (true) {
+        if (this.subbers.hasKey(key) || this.awaitNext.has(key))
+          return true
+
+        if (!key)
+          break
+        key = key.slice(0, Math.max(0, key.lastIndexOf('.')))
+      }
+    }
+
+    if (children === false)
+      return false
+
+    key += '.'
+
+    for (const k of this.subbers.keys()) {
+      if (k.startsWith(key))
+        return true
+    }
+
+    for (const k of this.awaitNext.keys()) {
+      if (k.startsWith(key))
+        return true
+    }
+
+    return false
   }
 }
 
