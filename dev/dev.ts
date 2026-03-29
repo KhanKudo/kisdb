@@ -16,17 +16,17 @@ const server = Bun.serve({
 
 console.log('Ready! ( http://localhost:3001 )')
 
-const DB = createVanillaViewer(handle)
+// const DB = createVanillaViewer(handle)
 
-DB.apple = (arg: any, x: any) => {
-  console.log('called with:', arg, x)
-  return 'banana'
-}
+// DB.apple = (arg: any, x: any) => {
+//   console.log('called with:', arg, x)
+//   return 'banana'
+// }
 
-DB.skype = (msg: string, x: any) => {
-  console.log('\t>\tSkype Message:\t', msg, x)
-  DB.msg = msg
-}
+// DB.skype = (msg: string, x: any) => {
+//   console.log('\t>\tSkype Message:\t', msg, x)
+//   DB.msg = msg
+// }
 
 // DB.saveDB = () => {
 //   saveDB(dbname)
@@ -38,15 +38,15 @@ DB.skype = (msg: string, x: any) => {
 //   }
 // }, 3000)
 
-setInterval(async () => {
-  if (typeof DB.count() === 'number') {
-    DB.count = (await DB.count) + 1
-    // console.log('count:', DB.count())
-  }
-  else {
-    // console.log('invalid count')
-  }
-}, 1000)
+// setInterval(async () => {
+//   if (typeof DB.count() === 'number') {
+//     DB.count = (await DB.count) + 1
+//     // console.log('count:', DB.count())
+//   }
+//   else {
+//     // console.log('invalid count')
+//   }
+// }, 1000)
 
 process.on('exit', () => {
   server.stop(true)

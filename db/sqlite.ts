@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type KCPHandle, BiMap, type SubType, type CallerType, type ResultType, type ListenerType, SubService } from '../kcp'
+import { type DataType, isBadKey, type ResultType, SubService, type KCPRawHandle, dbHandle } from '../kcp'
 
 const dbs = new Map<string, Database>()
-const dbSubs = new Map<string, Set<KCPHandle>>()
+const dbSubs = new Map<string, Set<KCPRawHandle>>()
 
 export const enum Specials {
   OBJECT = 'OBJ',
@@ -14,7 +14,7 @@ const Containers = [
   Specials.ARRAY,
 ]
 
-export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHandle {
+export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawHandle {
   const db = dbs.get(dbname) ?? new Database(`${dbname}.db`, { create: true, readwrite: true, strict: true })
   db.run(`CREATE TABLE IF NOT EXISTS _kvstore (
     key TEXT PRIMARY KEY,
@@ -28,8 +28,6 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   const likeKey = db.query<{ key: string, value: string | Specials }, string>('SELECT * FROM _kvstore WHERE key LIKE ?')
   const likeKeyOnly = db.query<{ key: string, value: string | Specials }, string>('SELECT key FROM _kvstore WHERE key LIKE ?')
   const deleteLikeKey = db.query<void, string>('DELETE FROM _kvstore WHERE key LIKE ?')
-
-  const kpidefs: Map<string, CallerType> = new Map()
 
   function getObj(key: string, asArray: true): DataType[] | undefined
   function getObj(key: string, asArray?: false): Record<string, DataType> | undefined
@@ -83,19 +81,13 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     return obj
   }
 
-  function setVal(key: string, value?: Exclude<DataType, object> | CallerType): ResultType {
+  function setVal(key: string, value?: Exclude<DataType, object>): ResultType {
+    if (isBadKey(key))
+      throw new Error(`Invalid setter key: "${key}"`)
+
     if (value === undefined) {
       deleteExactKey.run(key)
       subbers.trigger(key)
-      kpidefs.delete(key)
-    }
-    else if (typeof value === 'function') {
-      deleteExactKey.run(key)
-      subbers.trigger(key)
-      kpidefs.set(key, value)
-    }
-    else if (kpidefs.has(key)) {
-      return kpidefs.get(key)!(value)
     }
     else {
       updateExactKey.run(key, JSON.stringify(value))
@@ -103,28 +95,27 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
     }
   }
 
-  function setObj(key: string, obj: Record<string, DataType>): ResultType {
-    if (kpidefs.has(key)) {
-      return kpidefs.get(key)!(obj)
-    }
+  function setObj(key: string, obj: Record<string, DataType>, untouchedKeys?: Set<string>): ResultType {
+    if (Array.isArray(obj))
+      updateExactKey.run(key, Specials.ARRAY)
+    else
+      updateExactKey.run(key, Specials.OBJECT)
 
     for (const k in obj) {
       if (typeof obj[k] === 'object' && obj[k] !== null) {
-        setObj(key + '.' + k, obj[k] as any)
+        setObj(key + '.' + k, obj[k] as any, untouchedKeys)
       }
       else {
+        untouchedKeys?.delete(key + '.' + k)
         setVal(key + '.' + k, obj[k])
       }
     }
   }
 
   function getter(key: string): ResultType {
+    //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid getter key: "${key}"`)
-
-    if (kpidefs.has(key)) {
-      return kpidefs.get(key)!()
-    }
 
     const res = exactKey.get(key)
     if (res === null)
@@ -143,29 +134,21 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   const subbers = new SubService(getter)
 
   function setter(key: string, value?: DataType): ResultType {
+    //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)
 
-    if (kpidefs.has(key)) {
-      return kpidefs.get(key)!(value)
-    }
-
     db.transaction(() => {
-      const relatedSubbers = subbers.getSubbed(key, false)
+      const childSubbed = subbers.getSubbed(key, false)
 
-      let relatedKeys: null | Set<string> = null
-      if (relatedSubbers.size > 0) {
-        relatedKeys = new Set(likeKeyOnly.all(`${key}.%`).map(({ key }) => key)).intersection(relatedSubbers)
+      let childKeys: undefined | Set<string>
+      if (childSubbed.size > 0) {
+        childKeys = new Set(likeKeyOnly.all(`${key}.%`).map(({ key }) => key)).intersection(childSubbed)
       }
 
       deleteLikeKey.run(key + '.%')
       if (typeof value === 'object' && value !== null) {
-        if (Array.isArray(value))
-          updateExactKey.run(key, Specials.ARRAY)
-        else
-          updateExactKey.run(key, Specials.OBJECT)
-
-        setObj(key, value as any)
+        setObj(key, value as any, childKeys)
         subbers.trigger(key, value)
       }
       else {
@@ -191,8 +174,8 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
           break
       }
 
-      if (relatedKeys) {
-        for (const deletedKey of relatedKeys.difference(new Set(likeKeyOnly.all(`${key}.%`).map(({ key }) => key)))) {
+      if (childKeys?.size) {
+        for (const deletedKey of childKeys) {
           subbers.trigger(deletedKey)
         }
       }
@@ -202,7 +185,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   if (!dbs.has(dbname))
     dbs.set(dbname, db)
 
-  const handle = { path: '', getter, setter, subber: subbers.getSubber() }
+  const handle = dbHandle({ getter, setter, subber: subbers.getSubber() })
 
   if (!dbSubs.has(dbname))
     dbSubs.set(dbname, new Set())
@@ -210,7 +193,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPHand
   return handle
 }
 
-export function destroyKCPHandle(handle: KCPHandle) {
+export function destroyKCPHandle(handle: KCPRawHandle) {
   const entry = dbSubs.entries().find(([k, ref]) => ref.has(handle))
   if (!entry)
     throw new Error('Handle already destroyed!')

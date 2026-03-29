@@ -1,16 +1,18 @@
 import type { BunRequest, Server } from "bun"
-import type { DataType, KCPHandle, ListenerType, SubType } from "../kcp"
+import { NOACCESS, type DataType, type KCPRawHandle, type ListenerType, type SubType } from "../kcp"
 
 // kisdb HTTP (REST API) Server
-export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
+export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
   const muxSenders: Map<string, ListenerType> = new Map()
 
-  function handleRequest(req: BunRequest, server: Server): Response | Promise<Response> {
+  async function handleRequest(req: BunRequest, server: Server): Promise<Response> {
     const url = new URL(req.url)
     const key = url.searchParams.get('key') ?? url.pathname.slice(apiPath.length).replaceAll('/', '.')
+
+    const token = req.headers.get('Authorization')?.slice(7) ?? url.searchParams.get('token') ?? '' // "Bearer XYZ"
 
     let response: Response
     switch (req.method) {
@@ -22,6 +24,7 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle,
         const subType: SubType = (url.searchParams.get('type') as SubType) ?? 'now+future'
 
         const multiplex = url.searchParams.get('multiplex')
+        let connection = multiplex ? parseInt(multiplex, 16) : 0
 
         if (multiplex) {
           const sender = muxSenders.get(multiplex)
@@ -29,10 +32,10 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle,
             return new Response(`MultiplexID not found! (${multiplex})`, { status: 400 })
 
           try {
-            subber(key, sender, subType)
+            await subber({ token, connection }, key, sender, subType)
             return new Response('', { status: 200 })
           } catch (err) {
-            return new Response(`Failed to subscribe (${key}|${sender}|${subType}) with error: ${err}`, { status: 400 })
+            return new Response(`Failed to subscribe (${key}|${sender}|${subType}) with error: ${err?.toString()}`, { status: err === NOACCESS ? 403 : 400 })
           }
         }
 
@@ -45,33 +48,34 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle,
           console.log('subbed to', key)
 
           const sub = (data: DataType | undefined, key: string) => {
-            console.log('subber')
             writer.write(`data: ${JSON.stringify(data === undefined ? [key] : [key, data])}\n\n`);
           }
 
           if (startMultiplex) {
-            const muxId = Bun.randomUUIDv7('base64url')
+            const muxId = Bun.randomUUIDv7('hex').replaceAll('-', '')
             writer.write(`data: ${muxId}\n\n`)
 
             muxSenders.set(muxId, sub)
 
+            connection = parseInt(muxId, 16)
+
             req.signal.addEventListener("abort", () => {
-              subber(null, sub, 'never')
+              subber({ token, connection }, null, sub, 'never')
               muxSenders.delete(muxId)
               writer.close();
             })
           }
           else {
             req.signal.addEventListener("abort", () => {
-              subber(key, sub, 'never')
+              subber({ token, connection }, key, sub, 'never')
               writer.close();
             })
           }
 
           try {
-            subber(key, sub, subType)
+            await subber({ token, connection }, key, sub, subType)
           } catch (err) {
-            return new Response(`Failed to subscribe (${key}|${sub}|${subType}) with error: ${err}`, { status: 400 })
+            return new Response(`Failed to subscribe (${key}|${sub}|${subType}) with error: ${err?.toString()}`, { status: err === NOACCESS ? 403 : 400 })
           }
 
           return new Response(stream.readable, {
@@ -84,40 +88,39 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPHandle,
         }
         else {
           try {
-            const res = getter(key)
+            const res = await getter({ token, connection }, key)
             if (res === undefined)
               return new Response('')
             else
               return Response.json(res)
           } catch (err) {
-            return new Response(`Failed to get (${key}) with error: ${err}`, { status: 400 })
+            return new Response(`Failed to get (${key}) with error: ${err?.toString()}`, { status: (err === NOACCESS) ? 403 : 400 })
           }
         }
       }
       case 'POST':
         response = new Response('', { status: 201 })
         try {
-          return req.json().then(value => {
-            const res = setter(key, value as DataType)
-            if (res instanceof Promise)
-              return res.then(() => response)
-            else
-              return response
-          })
+          const value = await req.json() as DataType
+          const res = await setter({ token, connection: 0 }, key, value)
+          if (res === undefined)
+            return response
+          else
+            return Response.json(res)
         } catch (err) {
-          return new Response(`Failed to set (${key}) with error: ${err}`, { status: 400 })
+          return new Response(`Failed to set (${key}) with error: ${err?.toString()}`, { status: (err === NOACCESS) ? 403 : 400 })
         }
       case 'DELETE':
         response = new Response('', { status: 200 })
 
         try {
-          const res = setter(key)
+          const res = await setter({ token, connection: 0 }, key)
           if (res instanceof Promise)
             return res.then(() => response)
           else
             return response
         } catch (err) {
-          return new Response(`Failed to delete (${key}) with error: ${err}`, { status: 400 })
+          return new Response(`Failed to delete (${key}) with error: ${err?.toString()}`, { status: (err === NOACCESS) ? 403 : 400 })
         }
       default:
         return new Response('', { status: 405 })

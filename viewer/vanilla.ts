@@ -9,7 +9,7 @@ export function createVanillaViewer({ getter, setter, subber }: KCPHandle, path:
     return proxyRefs.get(path)!
 
   const func = function (...args: any[]) {
-    console.log(`func called at path "${path}" with:`, ...args, ';')
+    // console.log(`func called at path "${path}" with:`, ...args, ';')
     if (args.length === 0)
       return getter(path)
     else if (args.length === 1)

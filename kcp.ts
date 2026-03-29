@@ -1,6 +1,6 @@
 export type DataType = string | number | boolean | null | { [key: string]: DataType } | DataType[]
 export type ResultType = Promisify<DataType | undefined | void>
-export type CallerType = (arg?: DataType) => ResultType
+export type CallerType = (ctx: KCPTrustedContext, arg?: DataType) => ResultType
 
 export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
@@ -10,9 +10,11 @@ export type Promisify<T> = T | Promise<T>
 
 export interface KCPHandle {
   getter(key: string): ResultType
-  setter(key: string, value?: DataType | CallerType): ResultType
+  setter(key: string, value?: DataType): ResultType
   subber(key: string | null, listener: ListenerType, type: SubType): Promisify<void>
 }
+export interface KCPRawHandle extends KCPCtxHandle<KCPRawContext> { }
+export interface KCPTrustedHandle extends KCPCtxHandle<KCPTrustedContext> { }
 
 export type KcpContext<T extends object = {}> = Record<string, unknown> & T
 
@@ -20,6 +22,16 @@ export interface KCPCtxHandle<T extends object = {}> {
   getter(ctx: KcpContext<T>, key: string): ResultType
   setter(ctx: KcpContext<T>, key: string, value?: DataType | CallerType): ResultType
   subber(ctx: KcpContext<T>, key: string | null, listener: ListenerType, type: SubType): Promisify<void>
+}
+
+export interface KCPRawContext {
+  token: string
+  connection: number
+}
+
+export interface KCPTrustedContext {
+  identity: number
+  connection: number
 }
 
 export function isBadKey(key: string): boolean {
@@ -363,13 +375,12 @@ export class SubService extends SubMux {
     const subs = new Set<string>()
     if (parents !== false) {
       let k = key
-      while (true) {
-        k = k.slice(0, Math.max(0, k.lastIndexOf('.')))
+      let i = 0
+      while (i !== -1) {
+        i = k.lastIndexOf('.')
+        k = k.slice(0, Math.max(0, i))
         if (this.subbers.hasKey(k) || this.awaitNext.has(k))
           subs.add(k)
-
-        if (!k)
-          break
       }
 
       if (parents === true)
@@ -403,13 +414,16 @@ export class SubService extends SubMux {
       return this.subbers.hasKey(key) || this.awaitNext.has(key)
 
     if (children !== true) {
+      let i = 0
       while (true) {
         if (this.subbers.hasKey(key) || this.awaitNext.has(key))
           return true
 
-        if (!key)
+        if (i === -1)
           break
-        key = key.slice(0, Math.max(0, key.lastIndexOf('.')))
+
+        i = key.lastIndexOf('.')
+        key = key.slice(0, Math.max(0, i))
       }
     }
 
@@ -583,4 +597,262 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
   //     (v as any)(...args)
   //   }
   // }
+}
+
+// users have a 32-bit uid random unique number assigned
+// global 32-bit bitmask for groups exists, each user has a gbm (group bit map). This allows 32 groups in total to exist, good enough for now.
+
+// make efficient helper for mapping key permissions to appropriate allowed actions
+
+interface AuthSchema {
+  api: {
+    changePassword: (ctx: KCPTrustedContext, args: { oldPassword: string, newPassword: string }) => Promise<void>,
+    chown: (ctx: KCPTrustedContext, args: { base: string, owner: number | null }) => Promise<void>,
+    login: (ctx: KCPTrustedContext, args: { username: string, password: string }) => Promise<string>,
+    logout: (ctx: KCPTrustedContext, token: string) => Promise<void>,
+    logoutAll: (ctx: KCPTrustedContext, args: { username: string, password: string }) => Promise<void>,
+  },
+  users: Record<number, {
+    identity: number,
+    name: string,
+    passwordHash?: string, // if missing, cannot be logged into, only superadmin might provide tokens
+  }>,
+  access: Record<string, {
+    owner: number,
+    // TODO: add these vvv later, for now just have owner. owner can be EVERYONE or USERS as first basic kind of 'group-access'
+    // read: number[],
+    // write: number[],
+    // execute: number[],
+  }>,
+  tokens: Record<string, number>,
+}
+
+export const NOACCESS = Symbol('Access Denied')
+export const ANONYMOUS = 0 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
+export const EVERYONE = 1 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
+export const USERS = 2 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
+export const SUPERADMIN = 5 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
+
+export function dbHandle({ getter, setter, subber }: KCPHandle): KCPRawHandle {
+  const kpidefs: Map<string, CallerType> = new Map()
+
+    ; (async () => {
+      // await setter('auth')
+      const auth = await getter('auth') as undefined | AuthSchema
+
+      if (auth) {
+        if (typeof auth?.users !== 'object' || !(
+          ANONYMOUS in auth.users
+          && EVERYONE in auth.users
+          && USERS in auth.users
+          && SUPERADMIN in auth.users
+        )) {
+          throw new Error('"auth" DB entry already exists but is wrong!')
+        }
+      }
+      else {
+        await setter('auth', <Omit<AuthSchema, 'api'>>{
+          users: {
+            [ANONYMOUS]: {
+              // an unauthenticated user
+              identity: ANONYMOUS,
+              name: 'anonymous',
+            },
+            [EVERYONE]: {
+              // any user, including anonymous
+              identity: EVERYONE,
+              name: 'everyone',
+            },
+            [USERS]: {
+              // any authenticated user
+              identity: USERS,
+              name: 'users',
+            },
+            [SUPERADMIN]: {
+              // always has all permissions for everything granted
+              identity: SUPERADMIN,
+              name: 'superadmin',
+              passwordHash: Bun.password.hashSync('abc'), // default password
+            },
+          },
+          tokens: {},
+          access: {
+            'auth': {
+              owner: SUPERADMIN,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            'chown': {
+              owner: SUPERADMIN,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            'changePassword': {
+              owner: USERS,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            '': { // TODO: !!! testing-only !!!
+              owner: USERS,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            'login': {
+              owner: ANONYMOUS,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            'logout': {
+              owner: USERS,
+              read: [],
+              write: [],
+              execute: [],
+            },
+            'logoutAll': {
+              owner: EVERYONE,
+              read: [],
+              write: [],
+              execute: [],
+            },
+          },
+        } as any)
+      }
+      kpidefs.set('changePassword', <AuthSchema['api']['changePassword']>
+        (async ({ identity }, { oldPassword, newPassword }) => {
+          const key = `auth.users.${identity}.passwordHash`
+          const hash = await getter(key)
+          if (typeof hash !== 'string')
+            throw new Error('Login is forbidden for select user (identity)!')
+
+          const match = await Bun.password.verify(oldPassword, hash)
+          if (!match)
+            throw new Error('Incorrect password!')
+
+          await setter(key, await Bun.password.hash(newPassword))
+        }) as any)
+      kpidefs.set('chown', <AuthSchema['api']['chown']>
+        (async ({ identity }, { base, owner }) => {
+          if (owner === null)
+            await setter('auth.access.' + base)
+          else
+            await setter('auth.access.' + base, { owner, read: [], write: [], execute: [] })
+        }) as any)
+      kpidefs.set('login', <AuthSchema['api']['login']>
+        (async (_, { username, password }) => {
+          const users = Object.values(await getter(`auth.users`) as AuthSchema['users'])
+          const { identity, passwordHash } = users.find(({ name }) => name === username) ?? { identity: ANONYMOUS }
+          if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
+            throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
+
+          const token = (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', '')
+          await setter('auth.tokens.' + token, identity)
+          return token
+        }) as any)
+      kpidefs.set('logout', <AuthSchema['api']['logout']>
+        (async ({ identity }, token) => {
+          const id = await getter('auth.tokens.' + token)
+          if (identity !== id)
+            throw new Error('Cannot destroy foreign token!')
+
+          await setter('auth.tokens.' + token)
+          // TODO: revoke active subscriptions of token
+        }) as any)
+      kpidefs.set('logoutAll', <AuthSchema['api']['logoutAll']>
+        (async (_, { username, password }) => {
+          const users = await getter(`auth.users`) as AuthSchema['users']
+          const [identity, { passwordHash }] = Object.entries(users).find(([id, data]) => data.name === username) ?? [ANONYMOUS, {}]
+          if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
+            throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
+
+          const tokens = Object.entries((await getter('auth.tokens') as AuthSchema['tokens'])).filter(([token, id]) => id === identity)
+          for (const [token, id] of tokens)
+            await setter('auth.tokens.' + token)
+          // TODO: revoke active subscriptions of token
+        }) as any)
+    })()
+
+  const toTrustedContext = async (ctx: KCPRawContext): Promise<KCPTrustedContext> => {
+    if (ctx.token.includes('.'))
+      throw new Error('unsupported token characters!')
+
+    const res = (ctx.token && await getter('auth.tokens.' + ctx.token)) || ANONYMOUS
+    if (typeof res !== 'number')
+      throw NOACCESS
+    return {
+      identity: res,
+      connection: ctx.connection,
+    }
+  }
+
+  const authenticate = async (raw: KCPRawContext, key: string): Promise<KCPTrustedContext> => {
+    if (isBadKey(key))
+      throw new Error('Bad key! (contains prohibited characters)')
+
+    const ctx = await toTrustedContext(raw)
+    if (ctx.identity === SUPERADMIN)
+      return ctx // ALL ACCESS GRANTED
+
+    const dotIndex = key.indexOf('.')
+    // TODO: implement homedir accessed via leading $, as in either "$" or "$.xyz" resulting in something like "user-5.xyz", 5 being example identity
+    const base = dotIndex === -1 ? key : key.slice(0, dotIndex)
+    // TODO: optimize with synched js-map
+    const access = await getter('auth.access.' + base) as undefined | AuthSchema['access']['']
+    if (!access) {
+      throw NOACCESS
+    }
+    else if (access.owner === ctx.identity || access.owner === EVERYONE || (access.owner === USERS && ctx.identity !== ANONYMOUS)) {
+      return ctx
+    }
+    else {
+      throw NOACCESS
+    }
+  }
+
+  return {
+    async getter(raw, key) {
+      const kpifunc = kpidefs.get(key)
+      const ctx = await authenticate(raw, key)
+
+      if (kpifunc) {
+        return kpifunc(ctx)
+      }
+      else {
+        const res = await getter(key)
+        return res
+      }
+    },
+    async setter(raw, key, value) {
+      const kpifunc = kpidefs.get(key)
+      const ctx = await authenticate(raw, key)
+
+      if (typeof value === 'function') {
+        kpidefs.set(key, value)
+      }
+      else if (kpifunc) {
+        if (value === undefined)
+          kpidefs.delete(key)
+        else
+          return kpifunc(ctx, value)
+      }
+      else {
+        return await setter(key, value)
+      }
+    },
+    async subber(raw, key, listener, type) {
+      if (key !== null) {
+        await authenticate(raw, key)
+
+        if (kpidefs.has(key)) {
+          throw new Error('Cannot subscribe to KPI function!')
+        }
+      }
+
+      return subber(key, listener, type)
+    },
+  }
 }

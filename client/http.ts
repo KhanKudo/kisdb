@@ -1,7 +1,7 @@
-import { BiMap, SubMux, type DataType, type KCPHandle, type SubType } from "../kcp"
+import { SubMux, type DataType, type KCPHandle, type SubType } from "../kcp"
 
 // kisdb HTTP (REST API) Client
-export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle {
+export function createHttpClient<T = any>(apiPath: string = '/kisdb', ctx: { token: string }): KCPHandle {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
@@ -12,6 +12,10 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
 
   const pendingMuxId: Map<string, SubType> = new Map()
 
+    ; (window as any)?.addEventListener?.('beforeunload', () => {
+      evtSrc?.close()
+    })
+
   const submux = new SubMux(async (key, listener, type) => {
     if (key === null) {
       evtSrc?.close()
@@ -21,7 +25,7 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
     }
 
     if (muxId) {
-      const res = await fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET' })
+      const res = await fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET', headers: { 'Authorization': 'Bearer ' + ctx.token } })
       if (res.status === 200)
         return
 
@@ -32,17 +36,17 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
       return
     }
     else {
-      evtSrc = new (EventSource as any)(apiPath + `?getmux&key=${encodeURIComponent(key)}&type=${encodeURIComponent(type)}`)
+      evtSrc = new (EventSource as any)(apiPath + `?getmux&key=${encodeURIComponent(key)}&type=${encodeURIComponent(type)}&token=${encodeURIComponent(ctx.token)}`)
       evtSrc!.onmessage = (event: any) => {
         if (!muxId) {
           muxId = event.data
           for (const [key, type] of pendingMuxId.entries()) {
-            fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET' })
+            fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET', headers: { 'Authorization': 'Bearer ' + ctx.token } })
           }
           pendingMuxId.clear()
           return
         }
-        console.log("SSE Received:", event.data)
+        // console.log("SSE Received:", event.data)
         const [k, v] = JSON.parse(event.data) as [string, any]
         listener(v, k)
       }
@@ -60,7 +64,7 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
 
   const handle: KCPHandle = {
     async getter(key) {
-      const res = await fetch(toPath(key), { method: 'GET' })
+      const res = await fetch(toPath(key), { method: 'GET', headers: { 'Authorization': 'Bearer ' + ctx.token } })
       if (res.status === 200) {
         if (res.headers.get('content-length') === '0')
           return undefined
@@ -73,7 +77,8 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb'): KCPHandle
     async setter(key, value) {
       const config: RequestInit = {
         method: 'POST',
-        body: JSON.stringify(value)
+        body: JSON.stringify(value),
+        headers: { 'Authorization': 'Bearer ' + ctx.token }
       }
       if (value === undefined) {
         config.method = 'DELETE'
