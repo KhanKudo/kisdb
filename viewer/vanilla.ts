@@ -1,10 +1,60 @@
-import { isBadKey, type KCPHandle } from "../kcp"
+import { isBadKey, type DataType, type KCPHandle } from "../kcp"
 
-export type ProxyType<T = void, K extends any[] | Record<string, any> = Record<string, any>> = (() => Promise<T>) & K
+type VanillaType = string | number | boolean | null | (() => DataType | void | Promise<DataType | void>) | ((arg: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
+
+// export type ProxyType<T = any> = ((newValue: T) => Promise<unknown>) & (() => Promise<T>) & Promise<T> & (T extends any[]
+//   ? { [K in keyof T]: ProxyType<T[K]> }
+//   : T extends object
+//   ? { [K in keyof T]: ProxyType<T[K]> }
+//   : Promise<T>);
+
+export type ProxyType<T extends VanillaType = any> =
+  T extends (...args: infer A) => infer R
+  ? ProxyFunction<T, A, R>
+  : T extends readonly (infer U extends VanillaType)[]
+  ? ProxyArray<U>
+  : T extends { [key: string]: VanillaType }
+  ? ProxyObject<T>
+  : ProxyValue<T>;
+
+type ProxyFunction<T, A extends any[], R> =
+  T extends () => R
+  ? Promise<R> & (() => (R extends Promise<any> ? R : Promise<R>))
+  : (...args: A) => (R extends Promise<any> ? R : Promise<R>);
+
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+
+type ProxyValue<T> =
+  IsAny<T> extends true
+  ? any
+  : Promise<StripFuncs<T>> &
+  ((value: T) => Promise<void>) &
+  (() => Promise<StripFuncs<T>>) & Record<'$on' | '$once' | '$onnow' | '$oncenow' | '$off', (value: StripFuncs<T>, key: string) => void>;
+
+type ProxyObject<T extends { [key: string]: VanillaType }> =
+  {
+    [K in keyof T]: K extends string | number ? ProxyType<T[K]> : never
+  } &
+  ProxyValue<T>;
+
+type ProxyArray<T extends VanillaType> =
+  {
+    [K: number]: ProxyType<T>
+  } &
+  ProxyValue<T[]>;
+
+type StripFuncs<T> =
+  T extends (...args: any[]) => any
+  ? never
+  : T extends readonly (infer U)[]
+  ? StripFuncs<U>[]
+  : T extends object
+  ? { [K in keyof T]: StripFuncs<T[K]> }
+  : T;
 
 export const proxyRefs = new Map<string, ProxyType>()
 
-export function createVanillaViewer({ getter, setter, subber }: KCPHandle, path: string = ''): ProxyType {
+export function createVanillaViewer<T extends VanillaType = any>({ getter, setter, subber }: KCPHandle, path: string = ''): ProxyType<T> {
   if (proxyRefs.has(path))
     return proxyRefs.get(path)!
 

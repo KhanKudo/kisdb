@@ -8,13 +8,14 @@ import { createHttpClient } from "../client/http"
 const ctx = { token: sessionStorage.getItem('token') ?? '' }
 const client = createHttpClient(undefined, ctx)
 window.client = client
-window.DB = createVanillaViewer(client)
+const DB = createVanillaViewer<{ speedtest: number }>(client)
+window.DB = DB
 
-async function login(username, password) {
+async function login(username: string, password: string) {
   const token = await client.setter('login', { username, password })
   if (typeof token !== 'string') {
     console.warn(token)
-    throw new Error(token)
+    throw new Error(token?.toString())
   }
 
   sessionStorage.setItem('token', token)
@@ -34,9 +35,10 @@ window.logout = logout
 
 function speedtest(cycles = 100) {
   return new Promise(resolve => {
-    const db = window.DB.speedtest
-    const myFunc = c => {
+    const db = DB.speedtest
+    const myFunc = (c: number) => {
       if (c === 0) {
+        //@ts-ignore
         window.start = performance.now()
       }
       if (c < cycles)
@@ -44,7 +46,9 @@ function speedtest(cycles = 100) {
 
       db.$off = myFunc
       const end = performance.now()
+      //@ts-ignore
       console.info(`Total elapsed ${end - start}ms over ${cycles} iterations with average of ${Math.round((end - start) / cycles * 100) / 100}ms`)
+      //@ts-ignore
       resolve(end - start)
       delete window.DB.speedtest
     }

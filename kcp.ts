@@ -1,17 +1,15 @@
 export type DataType = string | number | boolean | null | { [key: string]: DataType } | DataType[]
-export type ResultType = Promisify<DataType | undefined | void>
+export type ResultType = Promise<DataType | undefined | void>
 export type CallerType = (ctx: KCPTrustedContext, arg?: DataType) => ResultType
 
 export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
 export type ListenerType = (value: DataType | undefined, key: string) => void
 
-export type Promisify<T> = T | Promise<T>
-
 export interface KCPHandle {
   getter(key: string): ResultType
   setter(key: string, value?: DataType): ResultType
-  subber(key: string | null, listener: ListenerType, type: SubType): Promisify<void>
+  subber(key: string | null, listener: ListenerType, type: SubType): Promise<void>
 }
 export interface KCPRawHandle extends KCPCtxHandle<KCPRawContext> { }
 export interface KCPTrustedHandle extends KCPCtxHandle<KCPTrustedContext> { }
@@ -21,7 +19,7 @@ export type KcpContext<T extends object = {}> = Record<string, unknown> & T
 export interface KCPCtxHandle<T extends object = {}> {
   getter(ctx: KcpContext<T>, key: string): ResultType
   setter(ctx: KcpContext<T>, key: string, value?: DataType | CallerType): ResultType
-  subber(ctx: KcpContext<T>, key: string | null, listener: ListenerType, type: SubType): Promisify<void>
+  subber(ctx: KcpContext<T>, key: string | null, listener: ListenerType, type: SubType): Promise<void>
 }
 
 export interface KCPRawContext {
@@ -156,7 +154,7 @@ export class SubMux {
         this.subberFunc(key, this.mySub, 'now+next') // assume something has changed during disconnect, this.awaitNow is still unchanged
   }
 
-  sub(key: string | null, listener: ListenerType, type: SubType): void {
+  async sub(key: string | null, listener: ListenerType, type: SubType): Promise<void> {
     if (key === null) {
       if (type !== 'never')
         throw new Error('type must be never, when key is null')

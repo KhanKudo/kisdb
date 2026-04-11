@@ -75,6 +75,8 @@ export function createHttpClient<T = any>(apiPath: string = '/kisdb', ctx: { tok
       throw new Error(`Got code ${res.status} from "${toPath(key)}" with error: ` + (await res.text() || res.statusText))
     },
     async setter(key, value) {
+      if (typeof value === 'function')
+        throw new Error('Client cannot use a function as a setter value')
       const config: RequestInit = {
         method: 'POST',
         body: JSON.stringify(value),

@@ -81,7 +81,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawH
     return obj
   }
 
-  function setVal(key: string, value?: Exclude<DataType, object>): ResultType {
+  function setVal(key: string, value?: Exclude<DataType, object>): void {
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)
 
@@ -95,7 +95,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawH
     }
   }
 
-  function setObj(key: string, obj: Record<string, DataType>, untouchedKeys?: Set<string>): ResultType {
+  function setObj(key: string, obj: Record<string, DataType>, untouchedKeys?: Set<string>): void {
     if (Array.isArray(obj))
       updateExactKey.run(key, Specials.ARRAY)
     else
@@ -112,7 +112,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawH
     }
   }
 
-  function getter(key: string): ResultType {
+  async function getter(key: string): ResultType {
     //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid getter key: "${key}"`)
@@ -133,7 +133,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawH
 
   const subbers = new SubService(getter)
 
-  function setter(key: string, value?: DataType): ResultType {
+  async function setter(key: string, value?: DataType): ResultType {
     //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)
@@ -160,7 +160,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawH
         k = k.slice(0, Math.max(0, k.lastIndexOf('.')))
 
         updateExactKeyIfNotContainer.run(k, Specials.OBJECT)
-        subbers.triggerHeavy(k, () => {
+        subbers.triggerHeavy(k, async () => {
           const value = exactKey.get(k)?.value
           if (value === Specials.ARRAY)
             return getObj(k, true)
