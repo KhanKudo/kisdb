@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "cd dev; bun build client.ts --target browser --bundle --outfile browser.js",
-    "dev": "cd dev; bun run dev.ts"
+    "dev": "bun run build && cd dev && bun run dev.ts"
   },
   "type": "module"
 }

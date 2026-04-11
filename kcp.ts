@@ -14,12 +14,10 @@ export interface KCPHandle {
 export interface KCPRawHandle extends KCPCtxHandle<KCPRawContext> { }
 export interface KCPTrustedHandle extends KCPCtxHandle<KCPTrustedContext> { }
 
-export type KcpContext<T extends object = {}> = Record<string, unknown> & T
-
-export interface KCPCtxHandle<T extends object = {}> {
-  getter(ctx: KcpContext<T>, key: string): ResultType
-  setter(ctx: KcpContext<T>, key: string, value?: DataType | CallerType): ResultType
-  subber(ctx: KcpContext<T>, key: string | null, listener: ListenerType, type: SubType): Promise<void>
+export interface KCPCtxHandle<T extends Record<string, any> = {}> {
+  getter(ctx: T, key: string): ResultType
+  setter(ctx: T, key: string, value?: DataType | CallerType): ResultType
+  subber(ctx: T, key: string | null, listener: ListenerType, type: SubType): Promise<void>
 }
 
 export interface KCPRawContext {
@@ -851,6 +849,20 @@ export function dbHandle({ getter, setter, subber }: KCPHandle): KCPRawHandle {
       }
 
       return subber(key, listener, type)
+    },
+  }
+}
+
+export function bindContext(context: KCPRawContext, { getter, setter, subber }: KCPRawHandle): KCPHandle {
+  return {
+    getter(key) {
+      return getter(context, key)
+    },
+    setter(key, value) {
+      return setter(context, key, value)
+    },
+    subber(key, listener, type) {
+      return subber(context, key, listener, type)
     },
   }
 }

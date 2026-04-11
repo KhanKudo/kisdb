@@ -1,6 +1,6 @@
-import { isBadKey, type DataType, type KCPHandle } from "../kcp"
+import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../kcp"
 
-type VanillaType = string | number | boolean | null | (() => DataType | void | Promise<DataType | void>) | ((arg: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
+type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
 // export type ProxyType<T = any> = ((newValue: T) => Promise<unknown>) & (() => Promise<T>) & Promise<T> & (T extends any[]
 //   ? { [K in keyof T]: ProxyType<T[K]> }
@@ -165,6 +165,37 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
   proxyRefs.set(path, proxy)
 
   return proxy
+}
+
+// create a listener that will get called if ANY of the provided kisdb-references are updated. Will trigger once on initialization
+// returns a function to unsubscribe from all referecnces
+export async function refUpdater<T extends ProxyType[] = []>(func: (...args: T) => void, ...refs: T): Promise<() => void> {
+  const unsub: (() => void)[] = []
+
+  let suppressed = true
+
+  for (let i = 0; i < refs.length; i++) {
+    const ref = refs[i]!
+    const sub = (val: any) => {
+      values[i] = val
+      if (!suppressed)
+        func(...values as any)
+    }
+    ref.$on = sub
+    unsub.push(() => ref.$off = sub)
+  }
+
+  const values: any[] = await Promise.all(refs)
+
+  suppressed = false
+  func(...values as any)
+
+  return () => {
+    suppressed = true
+    for (const desub of unsub) {
+      desub()
+    }
+  }
 }
 
 // export class KcpLink<T = any> {

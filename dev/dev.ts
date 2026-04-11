@@ -1,4 +1,5 @@
 import { createSQLiteHandle, destroyKCPHandle } from "../db/sqlite"
+import { bindContext, type KCPTrustedContext } from "../kcp"
 import { createHttpRoutes } from "../server/http"
 import { createVanillaViewer } from "../viewer/vanilla"
 
@@ -16,12 +17,20 @@ const server = Bun.serve({
 
 console.log('Ready! ( http://localhost:3001 )')
 
-// const DB = createVanillaViewer(handle)
+export type MyDbType = {
+  arr: number[],
+  count: number,
+  test: any,
+  x: { y: { z: {} } },
+  apple(ctx: KCPTrustedContext, arg: string): 'banana',
+}
 
-// DB.apple = (arg: any, x: any) => {
-//   console.log('called with:', arg, x)
-//   return 'banana'
-// }
+const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
+
+DB.apple = async (ctx, arg) => {
+  console.log('ctx:', ctx, 'called with arg:', arg)
+  return 'banana'
+}
 
 // DB.skype = (msg: string, x: any) => {
 //   console.log('\t>\tSkype Message:\t', msg, x)

@@ -1,6 +1,7 @@
 // import { Observable, element } from "dynamics"
-import { createVanillaViewer } from "../viewer/vanilla"
+import { createVanillaViewer, refUpdater } from "../viewer/vanilla"
 import { createHttpClient } from "../client/http"
+import type { MyDbType } from "./dev"
 
 // var __forceLoader = element()
 // __forceLoader = __forceLoader
@@ -8,7 +9,7 @@ import { createHttpClient } from "../client/http"
 const ctx = { token: sessionStorage.getItem('token') ?? '' }
 const client = createHttpClient(undefined, ctx)
 window.client = client
-const DB = createVanillaViewer<{ speedtest: number }>(client)
+const DB = createVanillaViewer<MyDbType & { speedtest: number }>(client)
 window.DB = DB
 
 async function login(username: string, password: string) {
@@ -50,11 +51,17 @@ function speedtest(cycles = 100) {
       console.info(`Total elapsed ${end - start}ms over ${cycles} iterations with average of ${Math.round((end - start) / cycles * 100) / 100}ms`)
       //@ts-ignore
       resolve(end - start)
-      delete window.DB.speedtest
+      //@ts-ignore
+      delete DB.speedtest
     }
     db.$on = myFunc
     db(0)
   })
 }
+
+//@ts-ignore
+window.stop = refUpdater((a, b, c) => {
+  console.log('REF UPDATER:', a, b, c)
+}, DB.arr, DB.count, DB.test)
 
 window.speedtest = speedtest
