@@ -99,7 +99,7 @@ import { createSQLiteHandle, destroyKCPHandle } from "@khankudo/kisdb/db/sqlite"
 import { createHttpRoutes } from "@khankudo/kisdb/server/http"
 import { createVanillaViewer } from "@khankudo/kisdb/viewer/vanilla"
 
-const handle = createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
+const handle = await createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
 
 const server = Bun.serve({ routes: createHttpRoutes(handle) })
 
@@ -112,7 +112,7 @@ export type MyDB = {
 
 const DB = createVanillaViewer<MyDB>(bindContext({
   connection: 0,
-  token: Bun.env.SERVER_TOKEN ?? ''
+  token: Bun.env.SERVER_TOKEN ?? 'xyz'
 }, handle))
 
 DB.rnd = async () => {

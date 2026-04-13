@@ -3,7 +3,7 @@ import { bindContext, type KCPTrustedContext } from "../kcp"
 import { createHttpRoutes } from "../server/http"
 import { createVanillaViewer } from "../viewer/vanilla"
 
-const handle = createSQLiteHandle()
+const handle = await createSQLiteHandle()
 
 const server = Bun.serve({
   routes: createHttpRoutes(handle),
@@ -26,8 +26,6 @@ export type MyDbType = {
 }
 
 const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
-
-DB.count.$on = console.log
 
 DB.apple = async (ctx, arg) => {
   console.log('ctx:', ctx, 'called with arg:', arg)

@@ -629,148 +629,148 @@ export const EVERYONE = 1 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TRO
 export const USERS = 2 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
 export const SUPERADMIN = 5 // MAKE SURE TO NOT CHANGE THESE VALUES -> WILL BE TROUBLE FOR MIGRATION
 
-export function dbHandle({ getter, setter, subber }: KCPHandle): KCPRawHandle {
+export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<KCPRawHandle> {
   const kpidefs: Map<string, CallerType> = new Map()
 
-    ; (async () => {
-      // await setter('auth')
-      const auth = await getter('auth') as undefined | AuthSchema
+  // await setter('auth')
+  const auth = await getter('auth') as undefined | AuthSchema
 
-      if (auth) {
-        if (typeof auth?.users !== 'object' || !(
-          ANONYMOUS in auth.users
-          && EVERYONE in auth.users
-          && USERS in auth.users
-          && SUPERADMIN in auth.users
-        )) {
-          throw new Error('"auth" DB entry already exists but is wrong!')
-        }
-      }
-      else {
-        await setter('auth', <Omit<AuthSchema, 'api'>>{
-          users: {
-            [ANONYMOUS]: {
-              // an unauthenticated user
-              identity: ANONYMOUS,
-              name: 'anonymous',
-            },
-            [EVERYONE]: {
-              // any user, including anonymous
-              identity: EVERYONE,
-              name: 'everyone',
-            },
-            [USERS]: {
-              // any authenticated user
-              identity: USERS,
-              name: 'users',
-            },
-            [SUPERADMIN]: {
-              // always has all permissions for everything granted
-              identity: SUPERADMIN,
-              name: 'superadmin',
-              passwordHash: Bun.password.hashSync('abc'), // default password
-            },
-          },
-          tokens: {},
-          access: {
-            'auth': {
-              owner: SUPERADMIN,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            'chown': {
-              owner: SUPERADMIN,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            'changePassword': {
-              owner: USERS,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            '': { // TODO: !!! testing-only !!!
-              owner: USERS,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            'login': {
-              owner: ANONYMOUS,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            'logout': {
-              owner: USERS,
-              read: [],
-              write: [],
-              execute: [],
-            },
-            'logoutAll': {
-              owner: EVERYONE,
-              read: [],
-              write: [],
-              execute: [],
-            },
-          },
-        } as any)
-      }
-      kpidefs.set('changePassword', <AuthSchema['api']['changePassword']>
-        (async ({ identity }, { oldPassword, newPassword }) => {
-          const key = `auth.users.${identity}.passwordHash`
-          const hash = await getter(key)
-          if (typeof hash !== 'string')
-            throw new Error('Login is forbidden for select user (identity)!')
+  if (auth) {
+    if (typeof auth?.users !== 'object' || !(
+      ANONYMOUS in auth.users
+      && EVERYONE in auth.users
+      && USERS in auth.users
+      && SUPERADMIN in auth.users
+    )) {
+      throw new Error('"auth" DB entry already exists but is wrong!')
+    }
+  }
+  else {
+    await setter('auth', <Omit<AuthSchema, 'api'>>{
+      users: {
+        [ANONYMOUS]: {
+          // an unauthenticated user
+          identity: ANONYMOUS,
+          name: 'anonymous',
+        },
+        [EVERYONE]: {
+          // any user, including anonymous
+          identity: EVERYONE,
+          name: 'everyone',
+        },
+        [USERS]: {
+          // any authenticated user
+          identity: USERS,
+          name: 'users',
+        },
+        [SUPERADMIN]: {
+          // always has all permissions for everything granted
+          identity: SUPERADMIN,
+          name: 'superadmin',
+          passwordHash: Bun.password.hashSync('abc'), // default password
+        },
+      },
+      tokens: {
+        'xyz': USERS, // !!! testing-only !!!
+      },
+      access: {
+        'auth': {
+          owner: SUPERADMIN,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        'chown': {
+          owner: SUPERADMIN,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        'changePassword': {
+          owner: USERS,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        '': { // TODO: !!! testing-only !!!
+          owner: USERS,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        'login': {
+          owner: ANONYMOUS,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        'logout': {
+          owner: USERS,
+          read: [],
+          write: [],
+          execute: [],
+        },
+        'logoutAll': {
+          owner: EVERYONE,
+          read: [],
+          write: [],
+          execute: [],
+        },
+      },
+    } as any)
+  }
+  kpidefs.set('changePassword', <AuthSchema['api']['changePassword']>
+    (async ({ identity }, { oldPassword, newPassword }) => {
+      const key = `auth.users.${identity}.passwordHash`
+      const hash = await getter(key)
+      if (typeof hash !== 'string')
+        throw new Error('Login is forbidden for select user (identity)!')
 
-          const match = await Bun.password.verify(oldPassword, hash)
-          if (!match)
-            throw new Error('Incorrect password!')
+      const match = await Bun.password.verify(oldPassword, hash)
+      if (!match)
+        throw new Error('Incorrect password!')
 
-          await setter(key, await Bun.password.hash(newPassword))
-        }) as any)
-      kpidefs.set('chown', <AuthSchema['api']['chown']>
-        (async ({ identity }, { base, owner }) => {
-          if (owner === null)
-            await setter('auth.access.' + base)
-          else
-            await setter('auth.access.' + base, { owner, read: [], write: [], execute: [] })
-        }) as any)
-      kpidefs.set('login', <AuthSchema['api']['login']>
-        (async (_, { username, password }) => {
-          const users = Object.values(await getter(`auth.users`) as AuthSchema['users'])
-          const { identity, passwordHash } = users.find(({ name }) => name === username) ?? { identity: ANONYMOUS }
-          if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
-            throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
+      await setter(key, await Bun.password.hash(newPassword))
+    }) as any)
+  kpidefs.set('chown', <AuthSchema['api']['chown']>
+    (async ({ identity }, { base, owner }) => {
+      if (owner === null)
+        await setter('auth.access.' + base)
+      else
+        await setter('auth.access.' + base, { owner, read: [], write: [], execute: [] })
+    }) as any)
+  kpidefs.set('login', <AuthSchema['api']['login']>
+    (async (_, { username, password }) => {
+      const users = Object.values(await getter(`auth.users`) as AuthSchema['users'])
+      const { identity, passwordHash } = users.find(({ name }) => name === username) ?? { identity: ANONYMOUS }
+      if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
+        throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
 
-          const token = (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', '')
-          await setter('auth.tokens.' + token, identity)
-          return token
-        }) as any)
-      kpidefs.set('logout', <AuthSchema['api']['logout']>
-        (async ({ identity }, token) => {
-          const id = await getter('auth.tokens.' + token)
-          if (identity !== id)
-            throw new Error('Cannot destroy foreign token!')
+      const token = (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', '')
+      await setter('auth.tokens.' + token, identity)
+      return token
+    }) as any)
+  kpidefs.set('logout', <AuthSchema['api']['logout']>
+    (async ({ identity }, token) => {
+      const id = await getter('auth.tokens.' + token)
+      if (identity !== id)
+        throw new Error('Cannot destroy foreign token!')
 
-          await setter('auth.tokens.' + token)
-          // TODO: revoke active subscriptions of token
-        }) as any)
-      kpidefs.set('logoutAll', <AuthSchema['api']['logoutAll']>
-        (async (_, { username, password }) => {
-          const users = await getter(`auth.users`) as AuthSchema['users']
-          const [identity, { passwordHash }] = Object.entries(users).find(([id, data]) => data.name === username) ?? [ANONYMOUS, {}]
-          if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
-            throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
+      await setter('auth.tokens.' + token)
+      // TODO: revoke active subscriptions of token
+    }) as any)
+  kpidefs.set('logoutAll', <AuthSchema['api']['logoutAll']>
+    (async (_, { username, password }) => {
+      const users = await getter(`auth.users`) as AuthSchema['users']
+      const [identity, { passwordHash }] = Object.entries(users).find(([id, data]) => data.name === username) ?? [ANONYMOUS, {}]
+      if (identity === ANONYMOUS || typeof passwordHash !== 'string' || !await Bun.password.verify(password, passwordHash))
+        throw new Error('Failed to login (user login may be forbidden or username/password is wrong)!')
 
-          const tokens = Object.entries((await getter('auth.tokens') as AuthSchema['tokens'])).filter(([token, id]) => id === identity)
-          for (const [token, id] of tokens)
-            await setter('auth.tokens.' + token)
-          // TODO: revoke active subscriptions of token
-        }) as any)
-    })()
+      const tokens = Object.entries((await getter('auth.tokens') as AuthSchema['tokens'])).filter(([token, id]) => id === identity)
+      for (const [token, id] of tokens)
+        await setter('auth.tokens.' + token)
+      // TODO: revoke active subscriptions of token
+    }) as any)
 
   const toTrustedContext = async (ctx: KCPRawContext): Promise<KCPTrustedContext> => {
     if (ctx.token.includes('.'))

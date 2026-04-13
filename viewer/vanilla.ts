@@ -3,11 +3,13 @@ import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from 
 type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
 export type ProxyType<T extends VanillaType = any> =
-  T extends (...args: infer A) => infer R
+  IsAny<T> extends true
+  ? any
+  : [T] extends [(...args: infer A) => infer R]
   ? ProxyFunction<T, A, R>
-  : T extends readonly (infer U extends VanillaType)[]
+  : [T] extends [readonly (infer U extends VanillaType)[]]
   ? ProxyArray<U>
-  : T extends { [key: string]: VanillaType }
+  : [T] extends [{ [key: string]: VanillaType }]
   ? ProxyObject<T>
   : ProxyValue<T>;
 

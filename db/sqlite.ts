@@ -14,7 +14,7 @@ const Containers = [
   Specials.ARRAY,
 ]
 
-export function createSQLiteHandle<T = any>(dbname: string = 'default'): KCPRawHandle {
+export function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise<KCPRawHandle> {
   const db = dbs.get(dbname) ?? new Database(`${dbname}.db`, { create: true, readwrite: true, strict: true })
   db.run(`CREATE TABLE IF NOT EXISTS _kvstore (
     key TEXT PRIMARY KEY,
