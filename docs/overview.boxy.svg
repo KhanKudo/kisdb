@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 600" xmlns:bx="https://boxy-svg.com">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 600" style="" xmlns:bx="https://boxy-svg.com">
   <defs>
     <bx:export>
       <bx:file format="png"/>
@@ -9,6 +9,7 @@
       <feColorMatrix type="saturate" values="0.5"/>
     </filter>
   </defs>
+  <rect x="25" y="25" width="1100" height="550" style="stroke: rgb(0, 0, 0); transform-origin: 2px 300px 0px; stroke-opacity: 0; fill: rgb(255, 255, 255);" rx="50" ry="50"/>
   <rect x="50" y="225" width="150" height="150" style="stroke: rgb(0, 0, 0); transform-origin: 125px 300px 0px; fill: rgb(255, 199, 67); stroke-width: 2px;" rx="25" ry="25"/>
   <text style="font-family: &quot;Arial&quot;, sans-serif; font-size: 28px; font-weight: 700; text-anchor: middle; white-space: pre;" x="126.011" y="309.814">Vanilla</text>
   <line style="fill: none; stroke: rgb(0, 0, 0); stroke-width: 3px;" x1="200" y1="300" x2="350" y2="300"/>
