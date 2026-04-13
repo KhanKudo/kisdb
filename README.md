@@ -47,30 +47,94 @@ I like building small, personal-use projects. I don't like designing and plannin
 # **Overview**
 ![Viewer-Client-Server-DB Overview Diagram](docs/overview.png)
 
-KisDB consists of four module layers, each focused on their own responsibilities with no additional requirements.
+KisDB consists of four module layers, each focusing only on it's own responsibilities with no additional requirements to consider.
 
 ## Viewer - Client
 The viewer is what transform the primitive KCPHandle Object a client provides into an actual programmatic interface for the developer to use to access their data and API endpoints. Any viewer can be chosen and freely used with any client, the developer can even make their own without needing to consider any of the other KisDB layers; simplicity and modularity at it's core. This boundary is what enables KisDB to be interface-agnostic, allowing for a personalized Developer Experience.
+
+If you are using a custom client-server for a specific project, say for MQTT on a microcontroller, your client doesn't have to support a viewer, it itself can be both a client and a simple viewer. The separation exists in KisDB, so that you can reuse the same client in the browser with different frameworks natively and much more reliably rather than having to chain multiple viewers on top of one another.
 
 ## Client - Server
 The Client and Server modules must always come in pairs. A single client module is only ever compatible and must explicitly be used with it's paired server module. They are responsible for transporting the data and requests. It does not matter how a server handles talking with it's client, the only requirement is that the server accepts a DB's KCPHandle and the client provides that KCPHandle to viewers. How they do it is completely irrelevant. This boundary is what enables KisDB to be protocol-agnostic, allowing wide hardware and programming language support.
 
 ## Server - Database
-The Server module accepts a KCPHandle Object from the Database Module and communicates using it. The server is responsible for assigning unqiue connection-ID to each client or omit it if stateless. Any server can work with any Database, there is also nothing stopping you from using multiple server in parallel providing different protocols for the same database. Changes are automatically reflected at all servers through the database-module, nothing needs to be tracked, managed or coordinated by the servers; they merely 'serve'. This boundary is what enables the separation of the transport-layer and the data-layer, allowing any client using any protocol to seamlessly integrate with the same underlying Application Logic & Data as any other client using any other protocol. 
+The Server module accepts a KCPHandle Object from the Database Module and communicates using it. The server is responsible for assigning unique connection-ID to each client or omit it if stateless. Any server can work with any Database, there is also nothing stopping you from using multiple server in parallel providing different protocols for the same database. Changes are automatically reflected at all servers through the database-module, nothing needs to be tracked, managed or coordinated by the servers; they merely 'serve'. This boundary is what enables the separation of the transport-layer and the data-layer, allowing any client using any protocol to seamlessly integrate with the same underlying Application Logic & Data as any other client using any other protocol. 
 
 ## Database - Storage
-The Database module is responsible for interacting with the actual DB-instance. It provides the standardized KCPHandle Object and translates it locally via e.g. SQLite or remotely using available specific SDKs such as mongoose, S3 or any SQL-interface. The Database module is also responsible for implementating all authentication and authorization methods. Middleware-style solutions could have been implemented for more flexibility, however since many databases already implement varying degrees of auth and even perhaps even realtime listening, etc. extracting those into layers would have made everything more complicated, less efficient and much more prone to bugs. This way, only the DB module is considered 'trusted-context', everything else needs to authenticate itself (yes even the server needs a token, even if used locally)
+The Database module is responsible for interacting with the actual DB-instance. It provides the standardized KCPHandle Object and translates it locally via e.g. SQLite or remotely using available specific SDKs such as mongoose, S3 or any SQL-interface. The Database module is also responsible for implementing all authentication and authorization methods. Middleware-style solutions could have been implemented for more flexibility, however since many databases already implement varying degrees of auth and even perhaps even realtime listening, etc. extracting those into layers would have made everything more complicated, less efficient and much more prone to bugs. This way, only the DB module is considered 'trusted-context', everything else needs to authenticate itself (yes even the application logic server needs a token, even if used locally)
 
-# **Usage**
-# **Examples**
+<!--TODO-->
+<!--# **Usage**-->
+
+# **Example**
+## Client / Browser
+```typescript
+import { createHttpClient } from 'kisdb/client/http'
+import { createVanillaViewer } from 'kisdb/viewer/vanilla'
+
+const client = createHttpClient()
+const DB = createVanillaViewer(client)
+
+DB.$on = console.info
+DB.x.$once = console.warn
+
+console.log(await DB.x) //> undefined
+DB.x = 5
+//info > {x:5}
+//warn > 5
+console.log(await DB.x) //> 5
+delete DB.x
+//info > {}
+
+console.log(await DB.rnd) //> -1..1 (random number)
+console.log(await DB.rnd) //> -1..1 (random number)
+console.log(await DB.rnd) //> -1..1 (random number)
+
+DB.x.$off = console.info
+```
+## Server / Bun
+```typescript
+import { bindContext } from "kisdb/kcp"
+import { createSQLiteHandle, destroyKCPHandle } from "kisdb/db/sqlite"
+import { createHttpRoutes } from "kisdb/server/http"
+import { createVanillaViewer } from "kisdb/viewer/vanilla"
+
+const handle = createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
+
+const server = Bun.serve({ routes: createHttpRoutes(handle) })
+
+console.log('Ready! ( http://localhost:3000 )')
+
+const DB = createVanillaViewer(bindContext({
+  connection: 0,
+  token: Bun.env.SERVER_TOKEN ?? ''
+}, handle))
+
+DB.rnd = async () => {
+  return Math.random() * 2 - 1
+}
+
+DB.x.$onnow = (value) => {
+  console.log('x is', value)
+}
+
+process.on('exit', () => {
+  server.stop(true)
+  destroyKCPHandle(handle)
+})
+```
 
 # **API Reference**
 ## KCPHandle
-> TODO: getter/setter/subber, KcpRawHandle, KcpTrustedHandle, Context
+ToDo
+<!-- TODO: getter/setter/subber, KcpRawHandle, KcpTrustedHandle, Context-->
 ## Helpers
-> TODO: metion & explain how to use all the various helpers to create your own viewer/client-server/db module (include auth in this section too and explain what paths it uses such as the 'auth.*' reserve and SUPERADMIN etc.)
+ToDo
+<!-- TODO: mention & explain how to use all the various helpers to create your own viewer/client-server/db module (include auth in this section too and explain what paths it uses such as the 'auth.*' reserve and SUPERADMIN etc.)
 
-> TODO: note that in future it is hoped to all multiple backend databases to be used, each for different data based on needs (similar to how auth reserves base-paths, so would this)
+TODO: note that in future it is hoped to allow multiple database modules to be used in parallel, each for different data based on needs (similar to how auth reserves base-paths, so would this) and automatically handle cross-requests and realtime changes.-->
 
 ## **Notes on AI**
-This project has **zero** AI-generated code or content of any kind. No agent, in-editor or project-context-aware AI was ever used for anything at all. Some microsnippets (~5 lines of code) might have come from AI. I still love to simply google (actually Brave/DDG) and look through Documentation/StackOverflow/Reddit but sometimes nothing comes up. Some tools or problems are too new, since AI noone sadly really posts solutions or problems on forums anymore. So my AI-philosophy is to use it as a modern-day search engine. The same way people would traditionally have used StackOverflow or Google Search (the old good one). I treat AI answers the same way I treat any zero-vote, zero-comment StackOverflow response: Cautiously optimistic. Modern-day search engines may have changed, my ways of using them and their content however have not. After all, even if one hard-headedly never interacts with AI themselves, there is no more way of knowing if any content on the internet came from an AI, a human, or simply a human using AI.
+This project has **zero** AI-generated code or content of any kind. No agent, in-editor or project-context-aware AI was ever used for anything at all. Some microsnippets (~5 lines of code) might have come from AI. I still love to simply google for stuff (actually Brave/DDG) and look through Documentation/StackOverflow/Reddit results but sometimes nothing comes up. Some tools or problems are too new, since AI noone sadly really posts solutions or questions on forums anymore. So my AI-philosophy is to use it as a modern-day search engine. The same way people would traditionally have used StackOverflow or Google Search (the good old one). I treat AI answers the same way I treat any zero-vote, zero-comment StackOverflow response: Cautiously optimistic.
+
+The way we search the internet may have changed, my way of using it and it's content however has not. After all, even if one hard-headedly never interacts with AI themselves, there is no more way of knowing if any content on the internet came from an AI, a human, or simply a human using AI. As such if one wishes to guarantee never using anything AI-generated, one must simply stop using the internet; I won't do that.
