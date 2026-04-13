@@ -2,12 +2,6 @@ import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from 
 
 type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
-// export type ProxyType<T = any> = ((newValue: T) => Promise<unknown>) & (() => Promise<T>) & Promise<T> & (T extends any[]
-//   ? { [K in keyof T]: ProxyType<T[K]> }
-//   : T extends object
-//   ? { [K in keyof T]: ProxyType<T[K]> }
-//   : Promise<T>);
-
 export type ProxyType<T extends VanillaType = any> =
   T extends (...args: infer A) => infer R
   ? ProxyFunction<T, A, R>
@@ -18,9 +12,7 @@ export type ProxyType<T extends VanillaType = any> =
   : ProxyValue<T>;
 
 type ProxyFunction<T, A extends any[], R> =
-  T extends () => R
-  ? Promise<R> & (() => (R extends Promise<any> ? R : Promise<R>))
-  : (...args: A) => (R extends Promise<any> ? R : Promise<R>);
+  (...args: A) => (R extends Promise<any> ? R : Promise<R>);
 
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 
@@ -29,11 +21,12 @@ type ProxyValue<T> =
   ? any
   : Promise<StripFuncs<T>> &
   ((value: T) => Promise<void>) &
-  (() => Promise<StripFuncs<T>>) & Record<'$on' | '$once' | '$onnow' | '$oncenow' | '$off', (value: StripFuncs<T>, key: string) => void>;
+  (() => Promise<StripFuncs<T>>) &
+  Record<'$on' | '$once' | '$onnow' | '$oncenow' | '$off', (value: StripFuncs<T>, key: string) => void>;
 
 type ProxyObject<T extends { [key: string]: VanillaType }> =
   {
-    [K in keyof T]: K extends string | number ? ProxyType<T[K]> : never
+    [K in keyof T]-?: K extends string | number ? ProxyType<T[K]> : never
   } &
   ProxyValue<T>;
 

@@ -19,13 +19,15 @@ console.log('Ready! ( http://localhost:3001 )')
 
 export type MyDbType = {
   arr: number[],
-  count: number,
+  count?: number,
   test: any,
   x: { y: { z: {} } },
   apple(ctx: KCPTrustedContext, arg: string): 'banana',
 }
 
 const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
+
+DB.count.$on = console.log
 
 DB.apple = async (ctx, arg) => {
   console.log('ctx:', ctx, 'called with arg:', arg)

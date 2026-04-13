@@ -4,7 +4,7 @@
 <h1 align="center"><b>KisDB</b></h1>
 
 > [!WARNING]
-> KisDB is a personal passion project reaslitically only meant for myself to use. It has plenty of cool features that others certainly could enjoy, so I putting it here, but do NOT expect regular updates or any maintenance of any kind. Use at your own risk!
+> KisDB is a personal passion project reaslitically only meant for myself to use. It has plenty of cool features that others certainly could enjoy, so I'm putting it here, but do NOT expect regular updates or any maintenance of any kind. Use at your own risk!
 
 # **Introduction**
 KisDB is a zero-dependency library that is highly modular and can serve as a schemaless, realtime Database and the primary API router for your small-scale personal project. It runs on Bun and can be interface-, protocol- and database-agnostic. The main goal is to have the simplest and most flexible Developer Experience possible, even if some performance/efficiency has to be sacrificed. Personal projects should be built to push your imagination and skills, not dance around dependencies' limitations.
@@ -69,8 +69,8 @@ The Database module is responsible for interacting with the actual DB-instance. 
 # **Example**
 ## Client / Browser
 ```typescript
-import { createHttpClient } from 'kisdb/client/http'
-import { createVanillaViewer } from 'kisdb/viewer/vanilla'
+import { createHttpClient } from '@khankudo/kisdb/client/http'
+import { createVanillaViewer } from '@khankudo/kisdb/viewer/vanilla'
 
 const client = createHttpClient()
 const DB = createVanillaViewer(client)
@@ -86,18 +86,18 @@ console.log(await DB.x) //> 5
 delete DB.x
 //info > {}
 
-console.log(await DB.rnd) //> -1..1 (random number)
-console.log(await DB.rnd) //> -1..1 (random number)
-console.log(await DB.rnd) //> -1..1 (random number)
+console.log(await DB.rnd()) //> -1..1 (random number)
+console.log(await DB.rnd()) //> -1..1 (random number)
+console.log(await DB.rnd()) //> -1..1 (random number)
 
 DB.x.$off = console.info
 ```
 ## Server / Bun
 ```typescript
-import { bindContext } from "kisdb/kcp"
-import { createSQLiteHandle, destroyKCPHandle } from "kisdb/db/sqlite"
-import { createHttpRoutes } from "kisdb/server/http"
-import { createVanillaViewer } from "kisdb/viewer/vanilla"
+import { bindContext } from "@khankudo/kisdb/kcp"
+import { createSQLiteHandle, destroyKCPHandle } from "@khankudo/kisdb/db/sqlite"
+import { createHttpRoutes } from "@khankudo/kisdb/server/http"
+import { createVanillaViewer } from "@khankudo/kisdb/viewer/vanilla"
 
 const handle = createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
 
@@ -105,7 +105,12 @@ const server = Bun.serve({ routes: createHttpRoutes(handle) })
 
 console.log('Ready! ( http://localhost:3000 )')
 
-const DB = createVanillaViewer(bindContext({
+export type MyDB = {
+  x?: number
+  rnd: () => number
+}
+
+const DB = createVanillaViewer<MyDB>(bindContext({
   connection: 0,
   token: Bun.env.SERVER_TOKEN ?? ''
 }, handle))
