@@ -1,4 +1,4 @@
-import { createSQLiteHandle, destroyKCPHandle } from "../db/sqlite"
+import { createSQLiteHandle, destroySQLiteHandle } from "../db/sqlite"
 import { bindContext, type KCPTrustedContext } from "../kcp"
 import { createHttpRoutes } from "../server/http"
 import { createVanillaViewer } from "../viewer/vanilla"
@@ -25,7 +25,7 @@ export type MyDbType = {
   apple(ctx: KCPTrustedContext, arg: string): 'banana',
 }
 
-const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
+const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? 'xyz' }, handle))
 
 DB.apple = async (ctx, arg) => {
   console.log('ctx:', ctx, 'called with arg:', arg)
@@ -59,5 +59,5 @@ DB.apple = async (ctx, arg) => {
 
 process.on('exit', () => {
   server.stop(true)
-  destroyKCPHandle(handle)
+  destroySQLiteHandle(handle)
 })

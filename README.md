@@ -67,6 +67,12 @@ The Database module is responsible for interacting with the actual DB-instance. 
 <!--# **Usage**-->
 
 # **Example**
+Here are very basic example snippets from the client & server. You can also just run the included dev-sample (p.s. zero-dependencies -> no `bun install` needed):
+```
+git clone https://github.com/KhanKudo/kisdb.git
+cd kisdb
+bun run dev
+```
 ## Client / Browser
 ```typescript
 import { createHttpClient } from '@khankudo/kisdb/client/http'
@@ -94,8 +100,8 @@ DB.x.$off = console.info
 ```
 ## Server / Bun
 ```typescript
-import { bindContext } from "@khankudo/kisdb/kcp"
-import { createSQLiteHandle, destroyKCPHandle } from "@khankudo/kisdb/db/sqlite"
+import { bindContext } from "@khankudo/kisdb"
+import { createSQLiteHandle, destroySQLiteHandle } from "@khankudo/kisdb/db/sqlite"
 import { createHttpRoutes } from "@khankudo/kisdb/server/http"
 import { createVanillaViewer } from "@khankudo/kisdb/viewer/vanilla"
 
@@ -125,7 +131,7 @@ DB.x.$onnow = (value) => {
 
 process.on('exit', () => {
   server.stop(true)
-  destroyKCPHandle(handle)
+  destroySQLiteHandle(handle)
 })
 ```
 

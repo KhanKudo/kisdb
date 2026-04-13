@@ -14,7 +14,7 @@ const Containers = [
   Specials.ARRAY,
 ]
 
-export function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise<KCPRawHandle> {
+export async function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise<KCPRawHandle> {
   const db = dbs.get(dbname) ?? new Database(`${dbname}.db`, { create: true, readwrite: true, strict: true })
   db.run(`CREATE TABLE IF NOT EXISTS _kvstore (
     key TEXT PRIMARY KEY,
@@ -185,7 +185,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise
   if (!dbs.has(dbname))
     dbs.set(dbname, db)
 
-  const handle = dbHandle({ getter, setter, subber: subbers.getSubber() })
+  const handle = await dbHandle({ getter, setter, subber: subbers.getSubber() })
 
   if (!dbSubs.has(dbname))
     dbSubs.set(dbname, new Set())
@@ -193,7 +193,7 @@ export function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise
   return handle
 }
 
-export function destroyKCPHandle(handle: KCPRawHandle) {
+export function destroySQLiteHandle(handle: KCPRawHandle) {
   const entry = dbSubs.entries().find(([k, ref]) => ref.has(handle))
   if (!entry)
     throw new Error('Handle already destroyed!')

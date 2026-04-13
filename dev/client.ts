@@ -1,12 +1,8 @@
-// import { Observable, element } from "dynamics"
 import { createVanillaViewer, refUpdater } from "../viewer/vanilla"
 import { createHttpClient } from "../client/http"
 import type { MyDbType } from "./dev"
 
-// var __forceLoader = element()
-// __forceLoader = __forceLoader
-
-const ctx = { token: sessionStorage.getItem('token') ?? '' }
+const ctx = { token: sessionStorage.getItem('token') ?? 'xyz' }
 const client = createHttpClient(undefined, ctx)
 window.client = client
 const DB = createVanillaViewer<MyDbType & { speedtest: number }>(client)
@@ -58,10 +54,9 @@ function speedtest(cycles = 100) {
     db(0)
   })
 }
+window.speedtest = speedtest
 
 //@ts-ignore
 window.stop = refUpdater((a, b, c) => {
   console.log('REF UPDATER:', a, b, c)
 }, DB.arr, DB.count, DB.test)
-
-window.speedtest = speedtest
