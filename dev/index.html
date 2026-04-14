@@ -4,13 +4,18 @@
   </head>
   <body>
     <h1>Hello, <span id="x"></span>!</h1>
-    <input type="number" id="y" step="1" onchange="DB.count = parseInt(window.y.value)">
+    <br>
+    <span>HTTP Client: </span>
+    <input type="number" id="y1" step="1" onchange="DB1.count = parseInt(window.y1.value)">
+    <br>
+    <span>WebSocket Client: </span>
+    <input type="number" id="y2" step="1" onchange="DB2.count = parseInt(window.y2.value)">
     <script src="browser.js"></script>
     <script>
-      DB.count.$onnow = (d,k)=>window.x.innerText = d
-      DB.count.$on = (d,k)=>console.log('key:',k)
-      DB.count.$on = (d,k)=>console.log('data:',d)
-      DB.count.$onnow = (d,k)=>window.x.style.color = d%2?'blue':'red'
+      DB1.count.$onnow = (d,k)=>window.x.innerText = d
+      DB1.count.$on = (d,k)=>console.log('key:',k)
+      DB1.count.$on = (d,k)=>console.log('data:',d)
+      DB1.count.$onnow = (d,k)=>window.x.style.color = d%2?'blue':'red'
     </script>
   </body>
 </html>

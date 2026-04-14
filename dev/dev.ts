@@ -1,21 +1,28 @@
 import { createSQLiteHandle, destroySQLiteHandle } from "../db/sqlite"
 import { bindContext, type KCPTrustedContext } from "../kcp"
 import { createHttpRoutes } from "../server/http"
+import { createWebSocketConfig } from "../server/websocket"
 import { createVanillaViewer } from "../viewer/vanilla"
 
 const handle = await createSQLiteHandle()
 
+const httpRoutes = createHttpRoutes(handle)
+const wsconf = createWebSocketConfig(handle)
+
 const server = Bun.serve({
-  routes: createHttpRoutes(handle),
+  routes: {
+    ...httpRoutes,
+    ...wsconf.routes,
+  },
   hostname: '0.0.0.0',
-  port: 3001,
+  websocket: wsconf.websocket,
   fetch(req, server) {
     return new Response(Bun.file('./' + (URL.parse(req.url)?.pathname?.slice(1) || 'index.html')))
     // return new Response('OK')
   }
 })
 
-console.log('Ready! ( http://localhost:3001 )')
+console.log('Ready! ( http://localhost:3000 )')
 
 export type MyDbType = {
   arr: number[],

@@ -34,6 +34,12 @@ export function isBadKey(key: string): boolean {
   return /[$%]|(?:\.(?:then|finally|catch|toString|toJSON)(?:\.|$))/.test(key)
 }
 
+let connId = 1
+
+export function getUniqueConnId(): number {
+  return connId++
+}
+
 // TODO: handle potential security bug with subbers and function-values.
 // Subber should be subbed to raw-db entry at the given key, never receive other's calling arguments or responses
 
