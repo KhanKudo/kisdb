@@ -25,6 +25,9 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
   pinger()
 
   const sendData = (...data: WsJsonType): void => {
+    if (ws.readyState != WebSocket.OPEN)
+      throw new Error('Socket isn\'t open: ' + data.toString())
+
     pinger()
     if (ctx.token !== lastToken) {
       lastToken = ctx.token
@@ -35,7 +38,7 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
   }
 
   const getData = (...kv: [string] | [string, DataType | undefined]): Promise<DataType | undefined> => {
-    const id = Date.now() * 1e6 + Math.round(Math.random() * 1e6) * (kv.length > 1 ? -1 : 1)
+    const id = (Date.now() * 1e6 + Math.round(Math.random() * 1e6)) * (kv.length > 1 ? -1 : 1)
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {

@@ -118,7 +118,7 @@ export type MyDB = {
 
 const DB = createVanillaViewer<MyDB>(bindContext({
   connection: 0,
-  token: Bun.env.SERVER_TOKEN ?? 'xyz'
+  token: Bun.env.SERVER_TOKEN ?? ''
 }, handle))
 
 DB.rnd = async () => {

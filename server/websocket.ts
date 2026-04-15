@@ -38,38 +38,45 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
         }
       },
       async message(ws, payload) {
-        if (payload === 'ping') {
-          ws.sendText('pong')
-          return
-        }
-
-        const [id, key, value] = JSON.parse(payload.toString()) as WsJsonType
-        if (key === '$token') {
-          if (value !== undefined && typeof value !== 'string') {
-            ws.close(400, '$token must be a string, got: ' + typeof value)
+        try {
+          if (payload === 'ping') {
+            ws.sendText('pong')
             return
           }
-          ws.data.ctx.token = value ?? ''
-          return
-        }
 
-        if (id === 0) {
-          await subber(ws.data.ctx, key, ws.data.sub, value as SubType)
-        }
-        else if (id > 0) {
-          const res = await getter(ws.data.ctx, key)
-          ws.sendText(JSON.stringify([id, res]))
-        }
-        else {
-          const res = await setter(ws.data.ctx, key, value)
-          ws.sendText(JSON.stringify([id, res]))
+          const [id, key, value] = JSON.parse(payload.toString()) as WsJsonType
+          if (key === '$token') {
+            if (value !== undefined && typeof value !== 'string') {
+              ws.close(400, '$token must be a string, got: ' + typeof value)
+              return
+            }
+            ws.data.ctx.token = value ?? ''
+            return
+          }
+
+          if (id === 0) {
+            await subber(ws.data.ctx, key, ws.data.sub, value as SubType)
+          }
+          else if (id > 0) {
+            const res = await getter(ws.data.ctx, key)
+            ws.sendText(JSON.stringify([id, res]))
+          }
+          else {
+            const res = await setter(ws.data.ctx, key, value)
+            ws.sendText(JSON.stringify([id, res]))
+          }
+        } catch (err) {
+          ws.close(1011)
+          console.error(err)
         }
       },
       close(ws) {
         if (!ws.data.ctx || !ws.data.sub)
           return
 
-        subber(ws.data.ctx, null, ws.data.sub, 'never')
+        try {
+          subber(ws.data.ctx, null, ws.data.sub, 'never')
+        } catch { }
       },
     }
   }

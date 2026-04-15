@@ -676,9 +676,7 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
           passwordHash: Bun.password.hashSync('abc'), // default password
         },
       },
-      tokens: {
-        'xyz': USERS, // !!! testing-only !!!
-      },
+      tokens: {},
       access: {
         'auth': {
           owner: SUPERADMIN,
@@ -699,7 +697,7 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
           execute: [],
         },
         '': { // TODO: !!! testing-only !!!
-          owner: USERS,
+          owner: EVERYONE,
           read: [],
           write: [],
           execute: [],

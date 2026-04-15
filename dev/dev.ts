@@ -32,7 +32,7 @@ export type MyDbType = {
   apple(ctx: KCPTrustedContext, arg: string): 'banana',
 }
 
-const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? 'xyz' }, handle))
+const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
 
 DB.apple = async (ctx, arg) => {
   console.log('ctx:', ctx, 'called with arg:', arg)
@@ -42,10 +42,6 @@ DB.apple = async (ctx, arg) => {
 // DB.skype = (msg: string, x: any) => {
 //   console.log('\t>\tSkype Message:\t', msg, x)
 //   DB.msg = msg
-// }
-
-// DB.saveDB = () => {
-//   saveDB(dbname)
 // }
 
 // setInterval(() => {

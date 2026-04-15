@@ -1,5 +1,20 @@
 import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../kcp"
 
+//TODO: $sync and .value / .$value
+// perhaps allow all values to have _key (or $key) 'clones' that are raw-values.
+// by default undefined, they are typed as optional
+// when accessed, e.g. DB._count, $sync is enabled, first return is undefined (unless already cached),
+//    then the actual value get's subscribed to and the cache is always kept in sync.
+//    from then on DB._count can safely and validly be used as a synchronous up-to-date value
+// when deleted, $sync is disabled, e.g. delete DB._count, since it's typed as optional, ts-check will work just fine
+// alternatively the ProxyType reference itself could be used with a key of $value, as in e.g. DB.$value
+
+//TODO: fix refUpdater argument types (ts-check thinks it gets ProxyType when it actually is getting the real data)
+
+//TODO: introduce not in SubType but just vanilla-viewer: onchange and onnowchange, no once-variant needed (or not yet planned at least)
+//      these exclusively trigger if the new value is actually different from the old one.
+//      If it's an object/array, it will be checked for a deepMatch, since the reference is obviously always different
+
 type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
 export type ProxyType<T extends VanillaType = any> =

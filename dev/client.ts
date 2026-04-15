@@ -7,7 +7,7 @@ if (!sessionStorage.getItem('token'))
   //@ts-ignore
   sessionStorage.setItem('token', window.prompt('Please enter a token:'))
 
-const ctx = { token: sessionStorage.getItem('token') ?? 'xyz' }
+const ctx = { token: sessionStorage.getItem('token') ?? '' }
 const client = createHttpClient(undefined, ctx)
 window.client = client
 const wsClient = createWebSocketClient(undefined, ctx)
