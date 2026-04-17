@@ -1,7 +1,8 @@
 import { createSQLiteHandle, destroySQLiteHandle } from "../db/sqlite"
-import { bindContext, type KCPTrustedContext } from "../kcp"
+import { type KCPTrustedContext } from "../kcp"
 import { createHttpRoutes } from "../server/http"
 import { createWebSocketConfig } from "../server/websocket"
+import { createDirectClient } from "../client/direct"
 import { createVanillaViewer } from "../viewer/vanilla"
 
 const handle = await createSQLiteHandle()
@@ -32,7 +33,8 @@ export type MyDbType = {
   apple(ctx: KCPTrustedContext, arg: string): 'banana',
 }
 
-const DB = createVanillaViewer<MyDbType>(bindContext({ connection: 0, token: Bun.env.SERVER_TOKEN ?? '' }, handle))
+const direct = createDirectClient(handle, { connection: 0, token: Bun.env.SERVER_TOKEN ?? '' })
+const DB = createVanillaViewer<MyDbType>(direct)
 
 DB.apple = async (ctx, arg) => {
   console.log('ctx:', ctx, 'called with arg:', arg)

@@ -856,17 +856,3 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
     },
   }
 }
-
-export function bindContext(context: KCPRawContext, { getter, setter, subber }: KCPRawHandle): KCPHandle {
-  return {
-    getter(key) {
-      return getter(context, key)
-    },
-    setter(key, value) {
-      return setter(context, key, value)
-    },
-    subber(key, listener, type) {
-      return subber(context, key, listener, type)
-    },
-  }
-}

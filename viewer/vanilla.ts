@@ -1,19 +1,20 @@
 import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../kcp"
 
-//TODO: $sync and .value / .$value
-// perhaps allow all values to have _key (or $key) 'clones' that are raw-values.
-// by default undefined, they are typed as optional
-// when accessed, e.g. DB._count, $sync is enabled, first return is undefined (unless already cached),
-//    then the actual value get's subscribed to and the cache is always kept in sync.
-//    from then on DB._count can safely and validly be used as a synchronous up-to-date value
-// when deleted, $sync is disabled, e.g. delete DB._count, since it's typed as optional, ts-check will work just fine
-// alternatively the ProxyType reference itself could be used with a key of $value, as in e.g. DB.$value
-
-//TODO: fix refUpdater argument types (ts-check thinks it gets ProxyType when it actually is getting the real data)
+// TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
+//       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched
+//       thus it is very important to set basePath of the viewer appropratelly to not clone-sync everything.
 
 //TODO: introduce not in SubType but just vanilla-viewer: onchange and onnowchange, no once-variant needed (or not yet planned at least)
 //      these exclusively trigger if the new value is actually different from the old one.
 //      If it's an object/array, it will be checked for a deepMatch, since the reference is obviously always different
+// -- > this might be better done via a 'risingEdge'-like function. Being 'changed(...)' or something alike.
+//      that's better because the server cannot realistically track for all client their individual states and needs for updates.
+
+type UnwrapProxy<T> = T extends ProxyType<infer V extends VanillaType> ? V : void;
+
+type UnwrapProxyArray<T extends any[]> = {
+  [K in keyof T]: UnwrapProxy<T[K]>
+};
 
 type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
@@ -179,134 +180,65 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
 
 // create a listener that will get called if ANY of the provided kisdb-references are updated. Will trigger once on initialization
 // returns a function to unsubscribe from all referecnces
-export async function refUpdater<T extends ProxyType[] = []>(func: (...args: T) => void, ...refs: T): Promise<() => void> {
+export function refUpdater<T extends ProxyType[] = []>(func: (...args: UnwrapProxyArray<T>) => void, ...refs: T): Promise<() => void> {
   const unsub: (() => void)[] = []
 
+  const triggered: Set<number> = new Set()
   let suppressed = true
+  const values: UnwrapProxyArray<T> = [] as any
 
-  for (let i = 0; i < refs.length; i++) {
-    const ref = refs[i]!
-    const sub = (val: any) => {
-      values[i] = val
-      if (!suppressed)
-        func(...values as any)
+  return new Promise(resolve => {
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i]!
+      const sub = (val: any) => {
+        values[i] = val
+        if (suppressed) {
+          triggered.add(i)
+          if (triggered.size === refs.length) {
+            suppressed = false
+            resolve(() => {
+              for (const desub of unsub) {
+                desub()
+              }
+            })
+            func(...values)
+          }
+        }
+        else
+          func(...values)
+      }
+      ref.$onnow = sub
+      unsub.push(() => ref.$off = sub)
     }
-    ref.$on = sub
-    unsub.push(() => ref.$off = sub)
-  }
-
-  const values: any[] = await Promise.all(refs)
-
-  suppressed = false
-  func(...values as any)
-
-  return () => {
-    suppressed = true
-    for (const desub of unsub) {
-      desub()
-    }
-  }
+  })
 }
 
-// export class KcpLink<T = any> {
-//   readonly obs: Observable<T>
+const risingFuncs: WeakMap<() => void, () => void> = new WeakMap()
+export function risingEdge(listener: () => void): (value?: boolean) => void {
+  let func = risingFuncs.get(listener)
+  if (!func) {
+    let lastValue: boolean | undefined
+    func = (value?: boolean) => {
+      if (value === true && lastValue === false)
+        listener()
+      lastValue = value
+    }
+    risingFuncs.set(listener, func)
+  }
+  return func
+}
 
-//   get root() {
-//     return this.obs.value
-//   }
-
-//   set root(value: T) {
-//     const com = `${Operators.OVERWRITE},${JSON.stringify(value)}`
-//     const root = this.root
-
-//     if (typeof root === 'object' && root !== null)
-//       (<any>root).__kcp = com
-//     else if (typeof value === 'object' && value !== null)
-//       this.obs.set(<T>createVanillaClient(this.sendKCP.bind(this), derefObject(value), '', this))
-//     else if (value !== undefined)
-//       this.obs.set(value)
-//     else
-//       throw new Error('Root object may not be set to undefined, use null instead.')
-
-//     this.sendKCP('', com)
-//   }
-
-//   receiveKCP(command: string) {
-//     this.kcpReceiverListener?.(command)
-
-//     const eiLoc = command.indexOf(',')
-//     const loc = command.slice(command.startsWith('.') ? 1 : 0, eiLoc).split('.')
-//     if (loc[0] === '')
-//       loc.splice(0, 1)
-//     let temp = this.root
-
-//     //@ts-ignore
-//     // console.log(`receivedKCP > loc:"${loc}", command:"${command}", op:"${Operators[parseInt(command.slice(eiLoc + 1, command.indexOf(',', eiLoc + 1)))]}"`)
-
-//     if (typeof temp === 'object' && temp !== null) {
-//       for (const part of loc)
-//         temp = (<any>temp)[part];
-
-//       (<any>temp).__kcp = command.slice(eiLoc + 1)
-//     }
-//     else if (command.startsWith(`,${Operators.OVERWRITE},`)) {
-//       const value = JSON.parse(command.slice(command.indexOf(',', eiLoc + 1) + 1))
-
-//       if (typeof value === 'object' && value !== null)
-//         this.obs.set(<T>createVanillaClient(this.sendKCP.bind(this), derefObject(value), '', this))
-//       else
-//         this.obs.set(value)
-//     }
-//     else
-//       throw new Error('Couldn\'t process received KCP as root is not an object, thus the only allowed command is a root-level overwrite, but instead received the above ^^^')
-//   }
-
-//   sendKCP(...commandParts: (string | { toString(): string })[]) {
-//     return this.sender(commandParts.join(','))
-//   }
-
-//   constructor(private sender: (command: string) => void, init?: T, private kcpReceiverListener?: (command: string) => void, public readonly dbname: string = 'default') {
-//     this.obs = new Observable<T>(
-//       <T>((typeof init === 'object' && init !== null) ? createVanillaClient(this.sendKCP.bind(this), derefObject(init), '', this) : init),
-//       false,
-//       init !== undefined
-//     )
-//   }
-
-//   toJSON(): T {
-//     return this.root
-//   }
-
-//   toString(): string {
-//     return JSON.stringify(this.root)
-//   }
-// }
-
-// export class KcpWebSocketClient<T = any> extends KcpLink<T> {
-//   private ws: WebSocket
-
-//   constructor(webSocketPath: string = '/kisdb') {
-//     if (webSocketPath.startsWith('/kisdb/'))
-//       super((com) => {
-//         console.log(`client > sendKCP > "${com}"`)
-//         this.ws.send(com)
-//       }, undefined, undefined, webSocketPath.slice(webSocketPath.indexOf('/', 1) + 1))
-//     else
-//       super((com) => {
-//         console.log(`client > sendKCP > "${com}"`)
-//         this.ws.send(com)
-//       })
-//     this.ws = new WebSocket(webSocketPath)
-//     this.ws.onmessage = ({ data: msg }) => {
-//       if (msg === 'PING')
-//         return
-
-//       console.log(`client > receiveKCP > "${msg}"`)
-//       super.receiveKCP(msg)
-//     }
-//   }
-
-//   close() {
-//     return this.ws.close()
-//   }
-// }
+const fallingFuncs: WeakMap<() => void, () => void> = new WeakMap()
+export function fallingEdge(listener: () => void): (value?: boolean) => void {
+  let func = fallingFuncs.get(listener)
+  if (!func) {
+    let lastValue: boolean | undefined
+    func = (value?: boolean) => {
+      if (value === false && lastValue === true)
+        listener()
+      lastValue = value
+    }
+    fallingFuncs.set(listener, func)
+  }
+  return func
+}
