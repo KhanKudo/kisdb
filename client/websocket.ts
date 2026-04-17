@@ -48,7 +48,10 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
         clearTimeout(timeout)
         resolve(data)
       })
-      sendData(id, ...kv)
+      if ('1' in kv && kv[1] === undefined)
+        sendData(id, kv[0])
+      else
+        sendData(id, ...kv)
     })
   }
 

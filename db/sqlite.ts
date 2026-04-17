@@ -159,6 +159,8 @@ export async function createSQLiteHandle<T = any>(dbname: string = 'default'): P
       while (true) {
         k = k.slice(0, Math.max(0, k.lastIndexOf('.')))
 
+        //TODO: fix bug where this ALWAYS, no matter what the path is, updates '', even if 'base.something' was used, not just for '.something'
+
         updateExactKeyIfNotContainer.run(k, Specials.OBJECT)
         subbers.triggerHeavy(k, async () => {
           const value = exactKey.get(k)?.value

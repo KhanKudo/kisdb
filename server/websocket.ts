@@ -1,4 +1,4 @@
-import type { BunRequest, Server, ServerWebSocket, WebSocketHandler } from "bun"
+import type { BunRequest, Server, WebSocketHandler } from "bun"
 import { getUniqueConnId, type DataType, type KCPRawContext, type KCPRawHandle, type ListenerType, type SubType } from "../kcp"
 
 export type WsJsonType =
@@ -33,7 +33,10 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
             token: '',
           },
           sub: (value, key) => {
-            ws.sendText(JSON.stringify([key, value]))
+            if (value === undefined)
+              ws.sendText(JSON.stringify([key]))
+            else
+              ws.sendText(JSON.stringify([key, value]))
           }
         }
       },
@@ -59,11 +62,17 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
           }
           else if (id > 0) {
             const res = await getter(ws.data.ctx, key)
-            ws.sendText(JSON.stringify([id, res]))
+            if (res === undefined)
+              ws.sendText(JSON.stringify([id]))
+            else
+              ws.sendText(JSON.stringify([id, res]))
           }
           else {
             const res = await setter(ws.data.ctx, key, value)
-            ws.sendText(JSON.stringify([id, res]))
+            if (res === undefined)
+              ws.sendText(JSON.stringify([id]))
+            else
+              ws.sendText(JSON.stringify([id, res]))
           }
         } catch (err) {
           ws.close(1011)

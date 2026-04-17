@@ -10,11 +10,11 @@ import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from 
 // -- > this might be better done via a 'risingEdge'-like function. Being 'changed(...)' or something alike.
 //      that's better because the server cannot realistically track for all client their individual states and needs for updates.
 
-type UnwrapProxy<T> = T extends ProxyType<infer V extends VanillaType> ? V : void;
+type UnwrapProxy<T> = T extends ProxyType<infer V extends VanillaType> ? V : void
 
 type UnwrapProxyArray<T extends any[]> = {
   [K in keyof T]: UnwrapProxy<T[K]>
-};
+}
 
 type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
@@ -27,12 +27,12 @@ export type ProxyType<T extends VanillaType = any> =
   ? ProxyArray<U>
   : [T] extends [{ [key: string]: VanillaType }]
   ? ProxyObject<T>
-  : ProxyValue<T>;
+  : ProxyValue<T>
 
 type ProxyFunction<T, A extends any[], R> =
-  (...args: A) => (R extends Promise<any> ? R : Promise<R>);
+  (...args: A) => (R extends Promise<any> ? R : Promise<R>)
 
-type IsAny<T> = 0 extends (1 & T) ? true : false;
+type IsAny<T> = 0 extends (1 & T) ? true : false
 
 type ProxyValue<T> =
   IsAny<T> extends true
@@ -40,19 +40,19 @@ type ProxyValue<T> =
   : Promise<StripFuncs<T>> &
   ((value: T) => Promise<void>) &
   (() => Promise<StripFuncs<T>>) &
-  Record<'$on' | '$once' | '$onnow' | '$oncenow' | '$off', (value: StripFuncs<T>, key: string) => void>;
+  Record<'$on' | '$once' | '$onnow' | '$oncenow' | '$off', (value: StripFuncs<T>, key: string) => void>
 
 type ProxyObject<T extends { [key: string]: VanillaType }> =
   {
     [K in keyof T]-?: K extends string | number ? ProxyType<T[K]> : never
   } &
-  ProxyValue<T>;
+  ProxyValue<T>
 
 type ProxyArray<T extends VanillaType> =
   {
     [K: number]: ProxyType<T>
   } &
-  ProxyValue<T[]>;
+  ProxyValue<T[]>
 
 type StripFuncs<T> =
   T extends (...args: any[]) => any
@@ -61,7 +61,7 @@ type StripFuncs<T> =
   ? StripFuncs<U>[]
   : T extends object
   ? { [K in keyof T]: StripFuncs<T[K]> }
-  : T;
+  : T
 
 export const proxyRefs = new Map<string, ProxyType>()
 
