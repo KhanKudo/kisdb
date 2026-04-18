@@ -1,5 +1,7 @@
 import { Database } from 'bun:sqlite'
-import { type DataType, isBadKey, type ResultType, SubService, type KCPRawHandle, dbHandle } from '../kcp'
+import { type DataType, isBadKey, type ResultType, type KCPRawHandle } from '../core/kcp'
+import { dbHandle } from '../core/auth'
+import { SubService } from '../core/subs'
 
 const dbs = new Map<string, Database>()
 const dbSubs = new Map<string, Set<KCPRawHandle>>()

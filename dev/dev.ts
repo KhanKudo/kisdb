@@ -1,11 +1,49 @@
 import { createSQLiteHandle, destroySQLiteHandle } from "../db/sqlite"
-import { type KCPTrustedContext } from "../kcp"
+import { type KCPTrustedContext } from "../core/kcp"
 import { createHttpRoutes } from "../server/http"
 import { createWebSocketConfig } from "../server/websocket"
 import { createDirectClient } from "../client/direct"
 import { createVanillaViewer } from "../viewer/vanilla"
+import { createAdminHelper } from "../core/admin"
+import { EVERYONE, SUPERADMIN, USERS } from "../core/auth"
+import { ensureData } from "../core/management"
 
 const handle = await createSQLiteHandle()
+
+const admin = await createAdminHelper(handle, 'DEFAULT_PA$$WORD')
+await admin.ensureAccess('', SUPERADMIN, EVERYONE, USERS, EVERYONE)
+await admin.ensureUser('demo', 'demo', true, '123')
+await admin.ensureUser('server', null, true, '456')
+await admin.destroy()
+
+export type MyDbType = {
+  arr: number[],
+  count?: number,
+  test: any,
+  x: { y: { z: {} } },
+  apple(ctx: KCPTrustedContext, arg: string): 'banana',
+}
+
+const direct = createDirectClient(handle, { connection: 0, token: Bun.env.SERVER_TOKEN ?? '456' })
+const DB = createVanillaViewer<MyDbType>(direct)
+
+await ensureData(direct, '', <Omit<MyDbType, 'apple'>>{
+  arr: [],
+  count: 0,
+  test: undefined,
+  x: {
+    y: {
+      z: {
+
+      }
+    }
+  }
+}, false)
+
+DB.apple = async (ctx, arg) => {
+  console.log('ctx:', ctx, 'called with arg:', arg)
+  return 'banana'
+}
 
 const httpRoutes = createHttpRoutes(handle)
 const wsconf = createWebSocketConfig(handle)
@@ -19,27 +57,12 @@ const server = Bun.serve({
   websocket: wsconf.websocket,
   fetch(req, server) {
     return new Response(Bun.file('./' + (URL.parse(req.url)?.pathname?.slice(1) || 'index.html')))
-    // return new Response('OK')
   }
 })
 
 console.log('Ready! ( http://localhost:3000 )')
 
-export type MyDbType = {
-  arr: number[],
-  count?: number,
-  test: any,
-  x: { y: { z: {} } },
-  apple(ctx: KCPTrustedContext, arg: string): 'banana',
-}
-
-const direct = createDirectClient(handle, { connection: 0, token: Bun.env.SERVER_TOKEN ?? '' })
-const DB = createVanillaViewer<MyDbType>(direct)
-
-DB.apple = async (ctx, arg) => {
-  console.log('ctx:', ctx, 'called with arg:', arg)
-  return 'banana'
-}
+console.log('DB:', await DB)
 
 // DB.skype = (msg: string, x: any) => {
 //   console.log('\t>\tSkype Message:\t', msg, x)

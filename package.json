@@ -20,7 +20,8 @@
     "typescript": "^5"
   },
   "exports": {
-    ".": "./kcp.ts",
+    ".": "./core/kcp.ts",
+    "./core/*": "./core/*.ts",
     "./viewer/*": "./viewer/*.ts",
     "./client/*": "./client/*.ts",
     "./server/*": "./server/*.ts",

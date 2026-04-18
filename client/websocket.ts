@@ -1,4 +1,5 @@
-import { SubMux, type DataType, type KCPHandle } from "../kcp"
+import { type DataType, type KCPHandle } from "../core/kcp"
+import { SubMux } from "../core/subs"
 import type { WsJsonType } from "../server/websocket"
 
 // KisDB WebSocket Client

@@ -1,4 +1,4 @@
-import type { KCPRawHandle, KCPRawContext, KCPHandle } from "../kcp"
+import type { KCPRawHandle, KCPRawContext, KCPHandle } from "../core/kcp"
 
 // KisDB Direct Client
 export function createDirectClient({ getter, setter, subber }: KCPRawHandle, ctx: KCPRawContext): KCPHandle {

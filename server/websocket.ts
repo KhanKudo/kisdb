@@ -1,5 +1,6 @@
 import type { BunRequest, Server, WebSocketHandler } from "bun"
-import { getUniqueConnId, type DataType, type KCPRawContext, type KCPRawHandle, type ListenerType, type SubType } from "../kcp"
+import type { DataType, KCPRawContext, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
+import { getUniqueConnId } from "../core/kcp"
 
 export type WsJsonType =
   [number, string] | // positive number -> getter

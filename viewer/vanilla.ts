@@ -1,4 +1,4 @@
-import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../kcp"
+import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../core/kcp"
 
 // TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
 //       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched

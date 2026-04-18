@@ -5,7 +5,7 @@ import { createWebSocketClient } from "../client/websocket"
 
 if (!sessionStorage.getItem('token'))
   //@ts-ignore
-  sessionStorage.setItem('token', window.prompt('Please enter a token:'))
+  sessionStorage.setItem('token', window.prompt('Please enter a token (demo token is "123"):'))
 
 const ctx = { token: sessionStorage.getItem('token') ?? '' }
 const client = createHttpClient(undefined, ctx)

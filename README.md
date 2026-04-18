@@ -78,10 +78,11 @@ bun run dev
 import { createHttpClient } from '@khankudo/kisdb/client/http'
 import { createVanillaViewer } from '@khankudo/kisdb/viewer/vanilla'
 
-const client = createHttpClient()
+const client = createHttpClient(undefined, { token: '123' })
 const DB = createVanillaViewer(client)
 
-DB.$on = console.info
+DB.$onnow = console.info
+//info > {}
 DB.x.$once = console.warn
 
 console.log(await DB.x) //> undefined
@@ -100,14 +101,27 @@ DB.x.$off = console.info
 ```
 ## Server / Bun
 ```typescript
-import { bindContext } from "@khankudo/kisdb"
 import { createSQLiteHandle, destroySQLiteHandle } from "@khankudo/kisdb/db/sqlite"
 import { createHttpRoutes } from "@khankudo/kisdb/server/http"
+import { createDirectClient } from "@khankudo/kisdb/client/direct"
 import { createVanillaViewer } from "@khankudo/kisdb/viewer/vanilla"
+import { createAdminHelper } from "../core/admin"
+import { EVERYONE, SUPERADMIN, USERS } from "../core/auth"
 
 const handle = await createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
 
 const server = Bun.serve({ routes: createHttpRoutes(handle) })
+
+// helper with various methods for database/server administration
+const admin = await createAdminHelper(handle, 'DEFAULT_PA$$WORD')
+// set default permissions for path '' to be owned by root, read: all, write: only authenticated, execute: all
+await admin.ensureAccess('', SUPERADMIN, EVERYONE, USERS, EVERYONE)
+// create a demo account with password 'demo' and token '123', (true keeps already existing tokens, e.g. after reboot)
+await admin.ensureUser('demo', 'demo', true, '123')
+// create a server account with login disabled and token '456', (true keeps already existing tokens, e.g. after reboot)
+await admin.ensureUser('server', false, true, '456')
+// invalidate the admin object - destroy internal token
+await admin.destroy()
 
 console.log('Ready! ( http://localhost:3000 )')
 
@@ -116,10 +130,11 @@ export type MyDB = {
   rnd: () => number
 }
 
-const DB = createVanillaViewer<MyDB>(bindContext({
+const direct = createDirectClient(handle, {
   connection: 0,
-  token: Bun.env.SERVER_TOKEN ?? ''
-}, handle))
+  token: Bun.env.SERVER_TOKEN ?? '456'
+})
+const DB = createVanillaViewer<MyDB>(direct)
 
 DB.rnd = async () => {
   return Math.random() * 2 - 1

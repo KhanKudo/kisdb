@@ -1,5 +1,6 @@
 import type { BunRequest, Server } from "bun"
-import { NOACCESS, type DataType, type KCPRawHandle, type ListenerType, type SubType } from "../kcp"
+import type { DataType, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
+import { NOACCESS } from "../core/auth"
 
 // kisdb HTTP (REST API) Server
 export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
