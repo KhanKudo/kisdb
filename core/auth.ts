@@ -11,6 +11,8 @@ export interface AuthSchema {
   api: {
     changePassword: (ctx: KCPTrustedContext, args: { oldPassword: string, newPassword: string }) => Promise<void>,
     chown: (ctx: KCPTrustedContext, args: { base: string, owner: number | null }) => Promise<void>,
+    whoami: (ctx: KCPTrustedContext) => Promise<number>,
+    identify: (ctx: KCPTrustedContext, token: string) => Promise<number>,
     login: (ctx: KCPTrustedContext, args: { username: string, password: string }) => Promise<string>,
     logout: (ctx: KCPTrustedContext, token: string) => Promise<void>,
     logoutAll: (ctx: KCPTrustedContext, args: { username: string, password: string }) => Promise<void>,
@@ -101,6 +103,14 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
           owner: SUPERADMIN,
           execute: USERS,
         },
+        'whoami': {
+          owner: SUPERADMIN,
+          execute: EVERYONE,
+        },
+        'identify': {
+          owner: SUPERADMIN,
+          execute: EVERYONE,
+        },
         'login': {
           owner: SUPERADMIN,
           execute: ANONYMOUS,
@@ -128,6 +138,15 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
         throw new Error('Incorrect password!')
 
       await setter(key, await Bun.password.hash(newPassword))
+    }) as any)
+  kpidefs.set('whoami', <AuthSchema['api']['whoami']>
+    (async ({ identity }) => {
+      return identity
+    }) as any)
+  kpidefs.set('identify', <AuthSchema['api']['identify']>
+    (async ({ identity }, token) => {
+      const id = await getter('auth.tokens.' + token)
+      return id || 0
     }) as any)
   kpidefs.set('login', <AuthSchema['api']['login']>
     (async (_, { username, password }) => {
@@ -190,6 +209,7 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
     // TODO: optimize with synched js-map
     const access = await getter('auth.access.' + base) as undefined | AuthSchema['access']['']
     if (!access) {
+      console.error(`Access Denied to "${key}" for non-admin`)
       throw NOACCESS
     }
     else if (
@@ -203,6 +223,7 @@ export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<K
       return ctx
     }
     else {
+      console.error(`Access Denied to "${key}" for identity "${ctx.identity}" with OP "${op}"`)
       throw NOACCESS
     }
   }

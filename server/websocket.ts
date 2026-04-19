@@ -1,6 +1,7 @@
 import type { BunRequest, Server, WebSocketHandler } from "bun"
 import type { DataType, KCPRawContext, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
 import { getUniqueConnId } from "../core/kcp"
+import { NOACCESS } from "../core/auth"
 
 export type WsJsonType =
   [number, string] | // positive number -> getter
@@ -76,8 +77,21 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
               ws.sendText(JSON.stringify([id, res]))
           }
         } catch (err) {
-          ws.close(1011)
-          console.error(err)
+          try {
+            const id = parseInt(payload.slice(1, 33).toString())
+            if (Number.isNaN(id))
+              return ws.close(1011)
+
+            if (err === NOACCESS) {
+              ws.sendText(JSON.stringify([id, null, 'NOACCESS']))
+            }
+            else {
+              ws.sendText(JSON.stringify([id, null, err]))
+            }
+          } catch (err) {
+            console.error('Server Error:', err)
+            ws.close(1011)
+          }
         }
       },
       close(ws) {

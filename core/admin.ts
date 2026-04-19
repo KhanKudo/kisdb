@@ -94,8 +94,8 @@ export async function createAdminHelper(...args: [Omit<KCPHandle, 'subber'>] | [
       else {
         let identity: number
         do {
-          identity = Math.floor(Math.random() * (Math.pow(2, 16) - 1))
-        } while (!(identity in users))
+          identity = Math.floor(Math.random() * (Math.pow(2, 32) - 1))
+        } while (identity in users)
 
         user = {
           identity,

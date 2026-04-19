@@ -1,4 +1,4 @@
-import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext } from "../core/kcp"
+import { isBadKey, type DataType, type KCPHandle, type KCPRawContext, type KCPTrustedContext } from "../core/kcp"
 
 // TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
 //       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched
@@ -131,7 +131,7 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
         default:
           if (isBadKey(key))
             throw new Error(`Invalid key requested: "${key}"!`)
-          console.log(`get(${toPath(key)})`)
+          // console.log(`get(${toPath(key)})`)
           return createVanillaViewer({ getter, setter, subber }, toPath(key))
       }
     },
@@ -157,7 +157,7 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
       if (typeof key !== 'string' || isBadKey(key))
         return false
 
-      console.log(`set(${toPath(key)}) =`, value)
+      // console.log(`set(${toPath(key)}) =`, value)
 
       setter(toPath(key), value)
       return true
@@ -166,7 +166,7 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
       if (typeof key !== 'string' || isBadKey(key))
         return false
 
-      console.log(`delete(${toPath(key)})`)
+      // console.log(`delete(${toPath(key)})`)
 
       setter(toPath(key))
       return true

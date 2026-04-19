@@ -16,6 +16,8 @@ const Containers = [
   Specials.ARRAY,
 ]
 
+const LOG = 'DEBUG' in Bun.env ? console.log : null
+
 export async function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise<KCPRawHandle> {
   const db = dbs.get(dbname) ?? new Database(`${dbname}.db`, { create: true, readwrite: true, strict: true })
   db.run(`CREATE TABLE IF NOT EXISTS _kvstore (
@@ -43,7 +45,7 @@ export async function createSQLiteHandle<T = any>(dbname: string = 'default'): P
     }
 
     if (!rows.length)
-      return
+      return obj
 
     let tmp = obj
     for (const { key: k, value } of rows) {
@@ -115,20 +117,25 @@ export async function createSQLiteHandle<T = any>(dbname: string = 'default'): P
   }
 
   async function getter(key: string): ResultType {
+    LOG?.('sqlite > get >', key)
     //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid getter key: "${key}"`)
 
     const res = exactKey.get(key)
-    if (res === null)
+    if (res === null) {
+      LOG?.('\t->', 'undefined')
       return undefined
-
+    }
     switch (res.value) {
       case Specials.OBJECT:
+        LOG?.('\t->', getObj(key))
         return getObj(key)
       case Specials.ARRAY:
+        LOG?.('\t->', getObj(key, true))
         return getObj(key, true)
       default:
+        LOG?.('\t->', JSON.parse(res.value))
         return JSON.parse(res.value)
     }
   }
@@ -136,6 +143,7 @@ export async function createSQLiteHandle<T = any>(dbname: string = 'default'): P
   const subbers = new SubService(getter)
 
   async function setter(key: string, value?: DataType): ResultType {
+    LOG?.('sqlite > set >', key, value === undefined ? 'undefined' : JSON.stringify(value))
     //TODO: remove since checked by dbHandle, but find a way to allow db to enforce additional restrictions though existing dbHandle checker
     if (isBadKey(key))
       throw new Error(`Invalid setter key: "${key}"`)

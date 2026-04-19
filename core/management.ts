@@ -24,3 +24,13 @@ export async function ensureData({ getter, setter }: Omit<KCPHandle, 'subber'>, 
     await setter(key, value)
   }
 }
+
+export async function getToken({ setter }: Omit<KCPHandle, 'getter' | 'subber'>, username: string, password: string, existingToken?: string): Promise<string> {
+  if (existingToken) {
+    const id = await setter('identify', existingToken) as number
+    if (id > 0)
+      return existingToken
+  }
+
+  return await setter('login', { username, password }) as string
+}

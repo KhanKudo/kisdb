@@ -25,9 +25,14 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
   }
   pinger()
 
-  const sendData = (...data: WsJsonType): void => {
-    if (ws.readyState != WebSocket.OPEN)
-      throw new Error('Socket isn\'t open: ' + data.toString())
+  const queue: string[] = []
+
+  const sendData = (...data: WsJsonType | [string]): boolean => {
+    if (ws.readyState != WebSocket.OPEN) {
+      if (data.length !== 1 && data[0] !== 0)
+        queue.push(JSON.stringify(data))
+      return false
+    }
 
     pinger()
     if (ctx.token !== lastToken) {
@@ -35,7 +40,12 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
       ws.send(JSON.stringify([0, '$token', lastToken] as WsJsonType))
     }
 
-    ws.send(JSON.stringify(data))
+    if (data.length === 1)
+      ws.send(data[0])
+    else
+      ws.send(JSON.stringify(data))
+
+    return true
   }
 
   const getData = (...kv: [string] | [string, DataType | undefined]): Promise<DataType | undefined> => {
@@ -45,10 +55,13 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
       const timeout = setTimeout(() => {
         reject('TIMED OUT')
       }, 60000)
-      pendingIds.set(id, (data) => {
+      pendingIds.set(id, [(data) => {
         clearTimeout(timeout)
         resolve(data)
-      })
+      }, (err) => {
+        clearTimeout(timeout)
+        reject(err)
+      }])
       if ('1' in kv && kv[1] === undefined)
         sendData(id, kv[0])
       else
@@ -61,21 +74,31 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
     lastToken = ''
 
     ws.addEventListener('open', () => {
-      pendingIds.clear()
+      let data: string | undefined = undefined
+      while (data = queue.shift()) {
+        if (sendData(data) === false) {
+          queue.unshift(data)
+          console.warn('Socket closed again, before previous queue could be cleared. Remaining packets in queue:', queue.length)
+          return
+        }
+      }
       submux.reconnect()
     })
     ws.addEventListener('message', ({ data }) => {
       if (data === 'pong')
         return
 
-      const [key, value] = JSON.parse(data?.toString())
+      const [key, value, err] = JSON.parse(data?.toString())
       if (typeof key === 'number') {
         const callback = pendingIds.get(key)
         if (!callback)
           return
 
         pendingIds.delete(key)
-        callback(value)
+        if (err !== undefined)
+          callback[1](err)
+        else
+          callback[0](value)
       }
       else {
         submux.listener(value, key)
@@ -87,7 +110,7 @@ export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ct
 
   reconnect()
 
-  const pendingIds: Map<number, (data: DataType | undefined) => void> = new Map()
+  const pendingIds: Map<number, [(data: DataType | undefined) => void, (error: any) => void]> = new Map()
 
     ; (window as any)?.addEventListener?.('beforeunload', () => {
       ws?.close()
