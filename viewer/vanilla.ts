@@ -1,4 +1,4 @@
-import { isBadKey, type DataType, type KCPHandle, type KCPRawContext, type KCPTrustedContext, type StripFuncs } from "../core/kcp"
+import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext, type StripFuncs } from "../core/kcp"
 
 // TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
 //       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched
@@ -203,34 +203,4 @@ export function refUpdater<T extends ProxyType[] = []>(func: (...args: UnwrapPro
       unsub.push(() => ref.$off = sub)
     }
   })
-}
-
-const risingFuncs: WeakMap<() => void, () => void> = new WeakMap()
-export function risingEdge(listener: () => void): (value?: boolean) => void {
-  let func = risingFuncs.get(listener)
-  if (!func) {
-    let lastValue: boolean | undefined
-    func = (value?: boolean) => {
-      if (value === true && lastValue === false)
-        listener()
-      lastValue = value
-    }
-    risingFuncs.set(listener, func)
-  }
-  return func
-}
-
-const fallingFuncs: WeakMap<() => void, () => void> = new WeakMap()
-export function fallingEdge(listener: () => void): (value?: boolean) => void {
-  let func = fallingFuncs.get(listener)
-  if (!func) {
-    let lastValue: boolean | undefined
-    func = (value?: boolean) => {
-      if (value === false && lastValue === true)
-        listener()
-      lastValue = value
-    }
-    fallingFuncs.set(listener, func)
-  }
-  return func
 }

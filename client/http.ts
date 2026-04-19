@@ -2,7 +2,7 @@ import { type DataType, type KCPHandle, type SubType } from "../core/kcp"
 import { SubMux } from "../core/subs"
 
 // kisdb HTTP (REST API) Client
-export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }): KCPHandle<T> {
+export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<T> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
@@ -22,6 +22,7 @@ export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: st
       evtSrc?.close()
       evtSrc = null
       muxId = null
+      connection?.(false)
       return
     }
 
@@ -45,6 +46,7 @@ export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: st
             fetch(apiPath + `?key=${encodeURIComponent(key)}&multiplex=${muxId}&type=${encodeURIComponent(type)}`, { method: 'GET', headers: { 'Authorization': 'Bearer ' + ctx.token } })
           }
           pendingMuxId.clear()
+          connection?.(true)
           return
         }
         // console.log("SSE Received:", event.data)
@@ -58,6 +60,7 @@ export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: st
         evtSrc = null
         muxId = null
         pendingMuxId.clear()
+        connection?.(false)
         setTimeout(() => submux.reconnect(), 5000)
       }
     }

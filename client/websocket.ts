@@ -3,7 +3,7 @@ import { SubMux } from "../core/subs"
 import type { WsJsonType } from "../server/websocket"
 
 // KisDB WebSocket Client
-export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }): KCPHandle<T> {
+export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<T> {
   if (apiPath.endsWith('/') && apiPath.length > 1)
     apiPath = apiPath.slice(0, -1)
 
@@ -83,6 +83,7 @@ export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { t
         }
       }
       submux.reconnect()
+      connection?.(true)
     })
     ws.addEventListener('message', ({ data }) => {
       if (data === 'pong')
@@ -104,8 +105,14 @@ export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { t
         submux.listener(value, key)
       }
     })
-    ws.addEventListener('error', () => setTimeout(reconnect, 5000))
-    ws.addEventListener('close', () => setTimeout(reconnect, 5000))
+    ws.addEventListener('error', () => {
+      connection?.(false)
+      setTimeout(reconnect, 5000)
+    })
+    ws.addEventListener('close', () => {
+      connection?.(false)
+      setTimeout(reconnect, 5000)
+    })
   }
 
   reconnect()

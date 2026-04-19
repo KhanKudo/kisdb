@@ -22,6 +22,7 @@
   "exports": {
     ".": "./core/kcp.ts",
     "./core/*": "./core/*.ts",
+    "./helpers/*": "./helpers/*.ts",
     "./viewer/*": "./viewer/*.ts",
     "./client/*": "./client/*.ts",
     "./server/*": "./server/*.ts",
