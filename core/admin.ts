@@ -5,19 +5,19 @@
 import type { AuthSchema } from "./auth";
 import type { KCPHandle, KCPRawContext, KCPRawHandle } from "./kcp";
 
-interface AdminType {
-  chown(path: string, owner: number): Promise<void>
+interface AdminType<T = any> {
+  chown(path: keyof T, owner: number): Promise<void>
   getIdentity(username: string): Promise<number>
   ensureUser(username: string, password: string | false | null, keepExistingTokens: boolean, ...tokens: string[]): Promise<number>
   ensureToken(token: string, user: string | number): Promise<void>
-  ensureAccess(path: string, owner: string | number, read: string | number | false | null, write: string | number | false | null, execute: string | number | false | null): Promise<void>
+  ensureAccess(path: keyof T, owner: string | number, read: string | number | false | null, write: string | number | false | null, execute: string | number | false | null): Promise<void>
   destroy(): Promise<void> // if used with KCPRawHandle and password, it's good to destroy the created token
 }
 
 // this viewer expects the provided KCPHandle to be authenticated as SUPERADMIN, otherwise most actions will fail.
-export async function createAdminHelper(handle: Omit<KCPHandle, 'subber'>): Promise<AdminType>
-export async function createAdminHelper(handle: Omit<KCPRawHandle, 'subber'>, password: string): Promise<AdminType>
-export async function createAdminHelper(...args: [Omit<KCPHandle, 'subber'>] | [Omit<KCPRawHandle, 'subber'>, string]): Promise<AdminType> {
+export async function createAdminHelper<T extends Record<any, any>>(handle: KCPHandle<T>): Promise<AdminType<T>>
+export async function createAdminHelper<T extends Record<any, any>>(handle: KCPRawHandle<T>, password: string): Promise<AdminType<T>>
+export async function createAdminHelper<T extends Record<any, any>>(...args: [KCPHandle<T>] | [KCPRawHandle<T>, string]): Promise<AdminType<T>> {
   const ctx: KCPRawContext = {
     connection: 0,
     token: ''
@@ -43,7 +43,8 @@ export async function createAdminHelper(...args: [Omit<KCPHandle, 'subber'>] | [
 
       await setter('logout', ctx.token)
     },
-    async chown(path, owner) {
+    async chown(_path, owner) {
+      const path = _path as string
       if (path.includes('.'))
         throw new Error(`Only base-paths support auth! Got: ${path}`)
 
@@ -127,7 +128,8 @@ export async function createAdminHelper(...args: [Omit<KCPHandle, 'subber'>] | [
       }
       await setter(`auth.tokens.${token}`, user)
     },
-    async ensureAccess(path, owner, read = null, write = null, execute = null) {
+    async ensureAccess(_path, owner, read = null, write = null, execute = null) {
+      const path = _path as string
       if (path.includes('.'))
         throw new Error(`Access control is only supported for base paths! (got "${path}")`)
 

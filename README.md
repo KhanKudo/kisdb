@@ -108,9 +108,14 @@ import { createVanillaViewer } from "@khankudo/kisdb/viewer/vanilla"
 import { createAdminHelper } from "../core/admin"
 import { EVERYONE, SUPERADMIN, USERS } from "../core/auth"
 
-const handle = await createSQLiteHandle('my_app') // bun:sqlite ./my_app.db
+export type MyDB = {
+  '': {
+    x?: number
+    rnd: () => number
+  }
+}
 
-const server = Bun.serve({ routes: createHttpRoutes(handle) })
+const handle = await createSQLiteHandle<MyDB>('my_app') // bun:sqlite ./my_app.db
 
 // helper with various methods for database/server administration
 const admin = await createAdminHelper(handle, 'DEFAULT_PA$$WORD')
@@ -123,18 +128,11 @@ await admin.ensureUser('server', false, true, '456')
 // invalidate the admin object - destroy internal token
 await admin.destroy()
 
-console.log('Ready! ( http://localhost:3000 )')
-
-export type MyDB = {
-  x?: number
-  rnd: () => number
-}
-
 const direct = createDirectClient(handle, {
   connection: 0,
   token: Bun.env.SERVER_TOKEN ?? '456'
 })
-const DB = createVanillaViewer<MyDB>(direct)
+const DB = createVanillaViewer(direct,'')
 
 DB.rnd = async () => {
   return Math.random() * 2 - 1
@@ -143,6 +141,9 @@ DB.rnd = async () => {
 DB.x.$onnow = (value) => {
   console.log('x is', value)
 }
+
+const server = Bun.serve({ routes: createHttpRoutes(handle) })
+console.log('Ready! ( http://localhost:3000 )')
 
 process.on('exit', () => {
   server.stop(true)

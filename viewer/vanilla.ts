@@ -1,4 +1,4 @@
-import { isBadKey, type DataType, type KCPHandle, type KCPRawContext, type KCPTrustedContext } from "../core/kcp"
+import { isBadKey, type DataType, type KCPHandle, type KCPRawContext, type KCPTrustedContext, type StripFuncs } from "../core/kcp"
 
 // TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
 //       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched
@@ -54,18 +54,10 @@ type ProxyArray<T extends VanillaType> =
   } &
   ProxyValue<T[]>
 
-type StripFuncs<T> =
-  T extends (...args: any[]) => any
-  ? never
-  : T extends readonly (infer U)[]
-  ? StripFuncs<U>[]
-  : T extends object
-  ? { [K in keyof T]: StripFuncs<T[K]> }
-  : T
-
 export const proxyRefs = new Map<string, ProxyType>()
 
-export function createVanillaViewer<T extends VanillaType = any>({ getter, setter, subber }: KCPHandle, path: string = ''): ProxyType<T> {
+export function createVanillaViewer<T extends Record<any, any>, K extends keyof T>({ getter, setter, subber }: KCPHandle<T>, _path: K): ProxyType<T[K]> {
+  const path = _path as string
   if (proxyRefs.has(path))
     return proxyRefs.get(path)!
 
@@ -132,7 +124,7 @@ export function createVanillaViewer<T extends VanillaType = any>({ getter, sette
           if (isBadKey(key))
             throw new Error(`Invalid key requested: "${key}"!`)
           // console.log(`get(${toPath(key)})`)
-          return createVanillaViewer({ getter, setter, subber }, toPath(key))
+          return createVanillaViewer({ getter, setter, subber }, toPath(key) as keyof K)
       }
     },
     set(_, key, value): boolean {

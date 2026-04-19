@@ -9,7 +9,7 @@ export type WsJsonType =
   [0, string, SubType] // zero -> subber
 
 // KisDB WebSocket Server
-export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRawHandle, apiPath: string = '/kisdb-ws'): {
+export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb-ws'): {
   routes: Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)>,
   websocket: WebSocketHandler<unknown>
 } {

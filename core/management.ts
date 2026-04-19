@@ -1,6 +1,9 @@
-import type { DataType, KCPHandle } from "./kcp";
+import type { DataType, KCPHandle, StripFuncs } from "./kcp";
 
-export async function ensureData({ getter, setter }: Omit<KCPHandle, 'subber'>, key: string, value: DataType | undefined, overwriteExisting: boolean = true, removeExtras: boolean = false, __internal?: DataType | undefined): Promise<void> {
+export async function ensureData<T extends Record<any, any>, K extends keyof T>({ getter, setter, subber }: KCPHandle<T>, _key: K, _value: StripFuncs<T[K]>, overwriteExisting: boolean = true, removeExtras: boolean = false, __internal?: DataType | undefined): Promise<void> {
+  const key = _key as string
+  const value = _value as DataType | undefined
+
   const state = __internal ?? await getter(key)
   if (value !== null && typeof value === 'object') {
     if (state === null || typeof state !== 'object') {
@@ -17,7 +20,7 @@ export async function ensureData({ getter, setter }: Omit<KCPHandle, 'subber'>, 
     }
 
     for (const k in value) {
-      await ensureData({ getter, setter }, key + '.' + k, (value as any)[k], overwriteExisting, removeExtras, (state as any)[k])
+      await ensureData({ getter, setter, subber }, key + '.' + k, (value as any)[k], overwriteExisting, removeExtras, (state as any)[k])
     }
   }
   else if (value !== state && (overwriteExisting || state === undefined)) {

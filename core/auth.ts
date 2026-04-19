@@ -53,7 +53,7 @@ export const USERS = 2
 // If the token is valid, all further checks are skipped, everything is permitted.
 export const SUPERADMIN = 5
 
-export async function dbHandle({ getter, setter, subber }: KCPHandle): Promise<KCPRawHandle> {
+export async function dbHandle<T = any>({ getter, setter, subber }: KCPHandle<T>): Promise<KCPRawHandle<T>> {
   const kpidefs: Map<string, CallerType> = new Map()
 
   // await setter('auth')

@@ -8,26 +8,28 @@ import { createAdminHelper } from "../core/admin"
 import { EVERYONE, SUPERADMIN, USERS } from "../core/auth"
 import { ensureData } from "../core/management"
 
-const handle = await createSQLiteHandle()
+export type MyDbType = {
+  '': {
+    arr: number[],
+    count?: number,
+    test: any,
+    x: { y: { z: {} } },
+    apple(ctx: KCPTrustedContext, arg: string): 'banana',
+  }
+}
+
+const handle = await createSQLiteHandle<MyDbType>()
 
 const admin = await createAdminHelper(handle, 'DEFAULT_PA$$WORD')
 await admin.ensureAccess('', SUPERADMIN, EVERYONE, USERS, EVERYONE)
 await admin.ensureUser('demo', 'demo', true, '123')
-await admin.ensureUser('server', null, true, '456')
+await admin.ensureUser('server', false, true, '456')
 await admin.destroy()
 
-export type MyDbType = {
-  arr: number[],
-  count?: number,
-  test: any,
-  x: { y: { z: {} } },
-  apple(ctx: KCPTrustedContext, arg: string): 'banana',
-}
-
 const direct = createDirectClient(handle, { connection: 0, token: Bun.env.SERVER_TOKEN ?? '456' })
-const DB = createVanillaViewer<MyDbType>(direct)
+const DB = createVanillaViewer(direct, '')
 
-await ensureData(direct, '', <Omit<MyDbType, 'apple'>>{
+await ensureData(direct, '', {
   arr: [],
   count: 0,
   test: undefined,

@@ -3,7 +3,7 @@ import type { DataType, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
 import { NOACCESS } from "../core/auth"
 
 // kisdb HTTP (REST API) Server
-export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
+export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 

@@ -3,7 +3,7 @@ import { SubMux } from "../core/subs"
 import type { WsJsonType } from "../server/websocket"
 
 // KisDB WebSocket Client
-export function createWebSocketClient<T = any>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }): KCPHandle {
+export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }): KCPHandle<T> {
   if (apiPath.endsWith('/') && apiPath.length > 1)
     apiPath = apiPath.slice(0, -1)
 

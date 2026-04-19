@@ -6,13 +6,26 @@ export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
 export type ListenerType = (value: DataType | undefined, key: string) => void
 
-export interface KCPHandle {
+export type StripFuncs<T> =
+  T extends (...args: any[]) => any
+  ? never
+  : T extends readonly (infer U)[]
+  ? StripFuncs<U>[]
+  : T extends object
+  ? {
+    // Key remapping: If the property is a function, map its key to 'never' (removes it).
+    // Otherwise, keep the key 'K'.
+    [K in keyof T as NonNullable<T[K]> extends (...args: any[]) => any ? never : K]: StripFuncs<T[K]>
+  }
+  : T;
+
+export interface KCPHandle<T = any> {
   getter(key: string): ResultType
   setter(key: string, value?: DataType): ResultType
   subber(key: string | null, listener: ListenerType, type: SubType): Promise<void>
 }
-export interface KCPRawHandle extends KCPCtxHandle<KCPRawContext> { }
-export interface KCPTrustedHandle extends KCPCtxHandle<KCPTrustedContext> { }
+export interface KCPRawHandle<T = any> extends KCPCtxHandle<KCPRawContext> { }
+export interface KCPTrustedHandle<T = any> extends KCPCtxHandle<KCPTrustedContext> { }
 
 export interface KCPCtxHandle<T extends Record<string, any> = {}> {
   getter(ctx: T, key: string): ResultType

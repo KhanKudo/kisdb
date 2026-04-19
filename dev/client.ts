@@ -8,15 +8,15 @@ if (!sessionStorage.getItem('token'))
   sessionStorage.setItem('token', window.prompt('Please enter a token (demo token is "123"):'))
 
 const ctx = { token: sessionStorage.getItem('token') ?? '' }
-const client = createHttpClient(undefined, ctx)
+const client = createHttpClient<MyDbType>(undefined, ctx)
 window.client = client
-const wsClient = createWebSocketClient(undefined, ctx)
+const wsClient = createWebSocketClient<MyDbType>(undefined, ctx)
 //@ts-ignore
 window.wsClient = wsClient
-const DB1 = createVanillaViewer<MyDbType & { speedtest: number }>(client)
+const DB1 = createVanillaViewer(client, '')
 //@ts-ignore
 window.DB1 = DB1
-const DB2 = createVanillaViewer<MyDbType & { speedtest: number }>(wsClient)
+const DB2 = createVanillaViewer(wsClient, '')
 //@ts-ignore
 window.DB2 = DB2
 

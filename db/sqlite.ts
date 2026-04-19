@@ -18,7 +18,7 @@ const Containers = [
 
 const LOG = 'DEBUG' in Bun.env ? console.log : null
 
-export async function createSQLiteHandle<T = any>(dbname: string = 'default'): Promise<KCPRawHandle> {
+export async function createSQLiteHandle<T>(dbname: string = 'default'): Promise<KCPRawHandle<T>> {
   const db = dbs.get(dbname) ?? new Database(`${dbname}.db`, { create: true, readwrite: true, strict: true })
   db.run(`CREATE TABLE IF NOT EXISTS _kvstore (
     key TEXT PRIMARY KEY,

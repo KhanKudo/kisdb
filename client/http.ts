@@ -2,7 +2,7 @@ import { type DataType, type KCPHandle, type SubType } from "../core/kcp"
 import { SubMux } from "../core/subs"
 
 // kisdb HTTP (REST API) Client
-export function createHttpClient<T = any>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }): KCPHandle {
+export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }): KCPHandle<T> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
