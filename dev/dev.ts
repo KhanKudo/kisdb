@@ -1,5 +1,4 @@
 import { createSQLiteHandle, destroySQLiteHandle } from "../db/sqlite"
-import { type KCPTrustedContext } from "../core/kcp"
 import { createHttpRoutes } from "../server/http"
 import { createWebSocketConfig } from "../server/websocket"
 import { createDirectClient } from "../client/direct"
@@ -7,6 +6,7 @@ import { createVanillaViewer } from "../viewer/vanilla"
 import { createAdminHelper } from "../core/admin"
 import { EVERYONE, SUPERADMIN, USERS } from "../core/auth"
 import { ensureData } from "../core/management"
+import type { KCPTrustedContext } from "../core/kcp"
 
 export type MyDbType = {
   '': {
@@ -14,7 +14,9 @@ export type MyDbType = {
     count?: number,
     test: any,
     x: { y: { z: {} } },
-    apple(ctx: KCPTrustedContext, arg: string): 'banana',
+    banana(ctx: KCPTrustedContext, arg: string): 'apple',
+    apple(arg: string): 'banana',
+    mango(): 'yummy',
   }
 }
 
@@ -43,8 +45,16 @@ await ensureData(direct, '', {
 }, false)
 
 DB.apple = async (ctx, arg) => {
-  console.log('ctx:', ctx, 'called with arg:', arg)
+  console.log('apple >', 'ctx:', ctx, 'called with arg:', arg)
   return 'banana'
+}
+DB.banana = async (ctx, arg) => {
+  console.log('banana >', 'ctx:', ctx, 'called with arg:', arg)
+  return 'apple'
+}
+DB.mango = async (ctx) => {
+  console.log('mango >', 'ctx:', ctx, 'called')
+  return 'yummy'
 }
 
 const httpRoutes = createHttpRoutes(handle)

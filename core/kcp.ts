@@ -6,6 +6,44 @@ export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
 export type ListenerType = (value: DataType | undefined, key: string) => void
 
+export type EnsureFuncsCtx<T> =
+  T extends (ctx: infer C, arg: infer A) => infer R
+  ? (
+    C extends KCPTrustedContext
+    ? (
+      A extends DataType | undefined
+      ? (ctx: KCPTrustedContext, arg: A) => (R extends DataType | undefined | void ? R : never)
+      : (ctx: KCPTrustedContext) => (R extends DataType | undefined | void ? R : never)
+    )
+    : (
+      C extends DataType | undefined
+      ? (ctx: KCPTrustedContext, arg: C) => (R extends DataType | undefined | void ? R : never)
+      : (ctx: KCPTrustedContext) => (R extends DataType | undefined | void ? R : never)
+    )
+  )
+  : T extends readonly (infer U)[]
+  ? EnsureFuncsCtx<U>[]
+  : T extends object
+  ? {
+    [K in keyof T]: EnsureFuncsCtx<T[K]>
+  }
+  : T;
+
+export type StripFuncsCtx<T> =
+  T extends (...args: any[]) => infer R
+  ? (
+    T extends (ctx: KCPTrustedContext, ...args: infer A) => any
+    ? (...args: A) => R
+    : T
+  )
+  : T extends readonly (infer U)[]
+  ? StripFuncsCtx<U>[]
+  : T extends object
+  ? {
+    [K in keyof T]: StripFuncsCtx<T[K]>
+  }
+  : T;
+
 export type StripFuncs<T> =
   T extends (...args: any[]) => any
   ? never

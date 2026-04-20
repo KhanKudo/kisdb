@@ -1,4 +1,4 @@
-import { isBadKey, type DataType, type KCPHandle, type KCPTrustedContext, type StripFuncs } from "../core/kcp"
+import { isBadKey, type DataType, type KCPHandle, type StripFuncs } from "../core/kcp"
 
 // TODO: $value was a bad idea ... for the vanilla-viewer. Instead create a vanilla-sync viewer
 //       it should be identical to the old, original 'kisdb' nested proxy. Values are all auto-synched
@@ -16,7 +16,7 @@ type UnwrapProxyArray<T extends any[]> = {
   [K in keyof T]: UnwrapProxy<T[K]>
 }
 
-type VanillaType = string | number | boolean | null | undefined | (() => DataType | void | Promise<DataType | void>) | ((ctx: KCPTrustedContext, arg?: any) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
+type VanillaType = string | number | boolean | null | undefined | ((...args: any[]) => DataType | void | Promise<DataType | void>) | { [key: string]: VanillaType } | VanillaType[]
 
 export type ProxyType<T extends VanillaType = any> =
   IsAny<T> extends true

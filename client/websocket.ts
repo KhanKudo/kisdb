@@ -1,9 +1,9 @@
-import { type DataType, type KCPHandle } from "../core/kcp"
+import type { DataType, KCPHandle, StripFuncsCtx } from "../core/kcp"
 import { SubMux } from "../core/subs"
 import type { WsJsonType } from "../server/websocket"
 
 // KisDB WebSocket Client
-export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<T> {
+export function createWebSocketClient<T>(apiPath: string = '/kisdb-ws', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<StripFuncsCtx<T>> {
   if (apiPath.endsWith('/') && apiPath.length > 1)
     apiPath = apiPath.slice(0, -1)
 

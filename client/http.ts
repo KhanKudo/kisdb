@@ -1,8 +1,8 @@
-import { type DataType, type KCPHandle, type SubType } from "../core/kcp"
+import type { DataType, KCPHandle, StripFuncsCtx, SubType } from "../core/kcp"
 import { SubMux } from "../core/subs"
 
 // kisdb HTTP (REST API) Client
-export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<T> {
+export function createHttpClient<T>(apiPath: string = '/kisdb', ctx: { token: string } = { token: '' }, connection?: (state: boolean) => void): KCPHandle<StripFuncsCtx<T>> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
