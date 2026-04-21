@@ -1,9 +1,9 @@
 import type { BunRequest, Server } from "bun"
-import type { DataType, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
+import type { ConnectionListener, DataType, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
 import { NOACCESS } from "../core/auth"
 
 // kisdb HTTP (REST API) Server
-export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb'): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
+export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb', connections?: ConnectionListener): Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)> {
   if (!apiPath.endsWith('/'))
     apiPath += '/'
 
@@ -46,8 +46,6 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHand
           const stream = new TransformStream();
           const writer = stream.writable.getWriter();
 
-          console.log('subbed to', key)
-
           const sub = (data: DataType | undefined, key: string) => {
             writer.write(`data: ${JSON.stringify(data === undefined ? [key] : [key, data])}\n\n`);
           }
@@ -64,12 +62,17 @@ export function createHttpRoutes<T = any>({ getter, setter, subber }: KCPRawHand
               subber({ token, connection }, null, sub, 'never')
               muxSenders.delete(muxId)
               writer.close();
+              connections?.(false, connection)
             })
+
+            connections?.(true, connection)
           }
           else {
             req.signal.addEventListener("abort", () => {
               subber({ token, connection }, key, sub, 'never')
               writer.close();
+              if (connection)
+                connections?.(false, connection)
             })
           }
 

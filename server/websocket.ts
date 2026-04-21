@@ -1,5 +1,5 @@
 import type { BunRequest, Server, WebSocketHandler } from "bun"
-import type { DataType, KCPRawContext, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
+import type { ConnectionListener, DataType, KCPRawContext, KCPRawHandle, ListenerType, SubType } from "../core/kcp"
 import { getUniqueConnId } from "../core/kcp"
 import { NOACCESS } from "../core/auth"
 
@@ -9,7 +9,7 @@ export type WsJsonType =
   [0, string, SubType] // zero -> subber
 
 // KisDB WebSocket Server
-export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb-ws'): {
+export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRawHandle<T>, apiPath: string = '/kisdb-ws', connections?: ConnectionListener): {
   routes: Record<string, Response | ((req: BunRequest, server: Server) => Response | Promise<Response>)>,
   websocket: WebSocketHandler<unknown>
 } {
@@ -41,6 +41,8 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
               ws.sendText(JSON.stringify([key, value]))
           }
         }
+
+        connections?.(true, ws.data.ctx.connection)
       },
       async message(ws, payload) {
         try {
@@ -101,6 +103,9 @@ export function createWebSocketConfig<T = any>({ getter, setter, subber }: KCPRa
         try {
           subber(ws.data.ctx, null, ws.data.sub, 'never')
         } catch { }
+
+        if (ws.data.ctx.connection)
+          connections?.(false, ws.data.ctx.connection)
       },
     }
   }

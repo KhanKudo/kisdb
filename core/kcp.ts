@@ -2,6 +2,8 @@ export type DataType = string | number | boolean | null | { [key: string]: DataT
 export type ResultType = Promise<DataType | undefined | void>
 export type CallerType = (ctx: KCPTrustedContext, arg?: DataType) => ResultType
 
+export type ConnectionListener = (isActive: boolean, connection: number) => void
+
 export type SubType = 'future' | 'now+future' | 'next' | 'now+next' | 'never'
 
 export type ListenerType = (value: DataType | undefined, key: string) => void
