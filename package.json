@@ -1,7 +1,7 @@
 {
   "name": "@khankudo/kisdb",
   "description": "KisDB is a zero-dependency library that is highly modular and can serve as a schemaless, realtime Database and as the primary API router for your small-scale personal project. It runs on Bun and can be interface-, protocol- and database-agnostic.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": "Luka Milenkovic <milenkovicluka449@gmail.com> (https://github.com/KhanKudo)",
   "repository": {
     "type": "git",
