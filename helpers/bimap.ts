@@ -29,9 +29,12 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
     return this.vk.entries()
   }
 
-  add(key: K, value: V): void {
+  // returns true, if that key didn't exist before
+  add(key: K, value: V): boolean {
+    let newKey = false
     let vs = this.kv.get(key)
     if (!vs) {
+      newKey = true
       vs = new Set()
       this.kv.set(key, vs)
     }
@@ -43,6 +46,8 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
       this.vk.set(value, ks)
     }
     ks.add(key)
+
+    return newKey
   }
 
   // returns true, if that key has no more values linked to it
@@ -59,32 +64,46 @@ export class BiMap<K = string, V = (...args: any[]) => any> {
     return false
   }
 
-  deleteKey(key: K): void {
+  // returns array of deleted values (because removed key was the only reference)
+  deleteKey(key: K): V[] {
+    const removed: V[] = []
+
     const vs = this.kv.get(key)
     if (!vs)
-      return
+      return removed
 
     this.kv.delete(key)
     let ks
     for (const v of vs) {
       ks = this.vk.get(v)
-      if (ks?.delete(key) && ks.size === 0)
+      if (ks?.delete(key) && ks.size === 0) {
         this.vk.delete(v)
+        removed.push(v)
+      }
     }
+
+    return removed
   }
 
-  deleteValue(value: V): void {
+  // returns array of deleted keys (because removed value was the only reference)
+  deleteValue(value: V): K[] {
+    const removed: K[] = []
+
     const ks = this.vk.get(value)
     if (!ks)
-      return
+      return removed
 
     this.vk.delete(value)
     let vs
     for (const k of ks) {
       vs = this.kv.get(k)
-      if (vs?.delete(value) && vs.size === 0)
+      if (vs?.delete(value) && vs.size === 0) {
         this.kv.delete(k)
+        removed.push(k)
+      }
     }
+
+    return removed
   }
 
   clear(): void {

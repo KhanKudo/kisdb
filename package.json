@@ -32,5 +32,8 @@
     "build": "cd dev; bun build client.ts --target browser --bundle --outfile browser.js",
     "dev": "bun run build && cd dev && bun run dev.ts"
   },
-  "type": "module"
+  "type": "module",
+  "optionalDependencies": {
+    "mqtt": "^5.15.1"
+  }
 }
