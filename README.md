@@ -2,7 +2,18 @@
     <img alt="KisDB Logo" width="200" src="docs/kisdb.png">
 </p>
 <h1 align="center"><b>KisDB</b></h1>
-
+<!--
+    TODO: allow custom-class value-types
+          One could define a type-id such as 'vec3' and a corresponding class 'Vec3' with a
+            * static-constructor-method 'Vec3.fromKCP'
+            * instance-method 'myvec.toKCP'
+          These two methods combined with the name would allow a kcp-server-client combo to reconstruct an actual class instead of strictly providing primitive data-storage.
+          This could store even complex classes such as custom HTML-Elements and preserve their states in the database. Making form-submissions incredibly easy with a KPI-Function accepting such a special-custom-class. The server would then not define that form-class for itself, so when parsing the clients-request, it wouldn't find the matching class and return the raw-KCP-DataType instead, making processing super easy.
+          Can be extended to any HTML Element. Can be really useful for tiny games storing e.g. Vec2 player positions.
+          Or perhaps a Player Inventory class as a whole instead of just items directly.  Heck, have a whole damn Player class get captured!
+          When detecting on a write, which class was provided or perhaps just a primitive or random object/array, the order in which the class-definitions were provided to KisDB would be iterated over sequentially. So that with class A and class B extends A, if provided as [A,B], B would never be detected since any B is instanceof A, but providing [B,A] would assure that B instanceof B is recognized before more generic B instanceof A triggers, and would also correctly get A as A since A isn't sufficient to pose as instanceof B
+          KisDB would internally e.g. for SQLite need to store this as an additional column-entry for each key being 'class-id' or NULL, it cannot interfere or replace any part of standard DataType, since if the class is not found on the client, the raw DataType/JSON will be provided, so that must still all validly work.
+-->
 > [!WARNING]
 > KisDB is a personal passion project realistically only meant for myself to use. It has plenty of cool features that others certainly could enjoy, so I'm putting it here, but do NOT expect regular updates or any maintenance of any kind. Use at your own risk!
 
@@ -67,6 +78,8 @@ The Database module is responsible for interacting with the actual DB-instance. 
 <!--# **Usage**-->
 
 # **Example**
+> If you want to see a real project, check out [IoNoW](https://github.com/KhanKudo/setu-iot-2026)
+
 Here are very basic example snippets from the client & server. You can also just run the included dev-sample (p.s. zero-dependencies -> no `bun install` needed):
 ```
 git clone https://github.com/KhanKudo/kisdb.git
